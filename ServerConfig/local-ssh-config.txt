@@ -1,0 +1,7 @@
+Host linuxone
+  HostName 148.100.85.139
+  User linux1
+  IdentityFile ~/.ssh/GuardianKey.pem
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentitiesOnly yes
