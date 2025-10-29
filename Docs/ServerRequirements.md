@@ -8,6 +8,7 @@
 ## Python Packages
 - Pandas (will bring in numpy, csv...) ✅
 - FastAPI ✅
+- Uvicorn ✅
 
 ## Web Hosting
 - Apache setup
