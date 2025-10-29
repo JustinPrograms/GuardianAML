@@ -11,5 +11,4 @@
 - Uvicorn ✅
 
 ## Web Hosting
-- Apache setup
-- React
+- Node.js ✅
