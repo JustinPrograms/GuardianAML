@@ -1,0 +1,3 @@
+sklearn2pmml==0.123.1
+# Add scikit-learn if not already present in the container
+scikit-learn
