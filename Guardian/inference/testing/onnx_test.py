@@ -3,6 +3,10 @@ import numpy as np
 import onnxruntime as ort
 
 
+def _resolve_path(p: str) -> str:
+    return os.path.abspath(os.path.expanduser(p))
+
+
 def _shape(shape, batch: int = 1) -> tuple[int, ...]:
     out = []
     for d in shape:
@@ -15,7 +19,7 @@ def _shape(shape, batch: int = 1) -> tuple[int, ...]:
 
 
 def main() -> int:
-    model_path = "~/Guardian/datasets/engineered_testing_mini.csv"
+    model_path = _resolve_path("~/Guardian/models/model.onnx")
     n = int(os.getenv("N", "10"))
     batch = int(os.getenv("BATCH", "1"))
 
@@ -37,7 +41,9 @@ def main() -> int:
         "Receiving_Currency": os.getenv(
             "RECEIVING_CURRENCY_POOL", "USD,CAD,EUR,GBP,JPY"
         ).split(","),
-        "Payment_Currency": os.getenv("PAYMENT_CURRENCY_POOL", "USD,CAD,EUR,GBP,JPY").split(","),
+        "Payment_Currency": os.getenv(
+            "PAYMENT_CURRENCY_POOL", "USD,CAD,EUR,GBP,JPY"
+        ).split(","),
     }
 
     feeds = {}
@@ -81,4 +87,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
