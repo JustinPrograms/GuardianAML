@@ -15,7 +15,7 @@ def _shape(shape, batch: int = 1) -> tuple[int, ...]:
 
 
 def main() -> int:
-    model_path = "../inference/model.onnx"
+    model_path = "~/Guardian/datasets/engineered_testing_mini.csv"
     n = int(os.getenv("N", "10"))
     batch = int(os.getenv("BATCH", "1"))
 

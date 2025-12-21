@@ -80,7 +80,7 @@ def _build_feeds(df: pd.DataFrame, sess: ort.InferenceSession) -> dict[str, Any]
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run ONNX model inference on engineered CSV rows.")
     ap.add_argument("--csv", default="datasets/engineered_testing_mini.csv")
-    ap.add_argument("--model", default="../models/model.onnx")
+    ap.add_argument("--model", default="~/Guardian/datasets/engineered_testing_mini.csv")
     ap.add_argument("--out", default="", help="Write CSV with predictions appended.")
     ap.add_argument("--rows", type=int, default=0, help="Limit number of rows (0 = all).")
     ap.add_argument("--derive-time", action="store_true", help="Derive hour/dow/is_weekend from Timestamp if missing.")
