@@ -1,5 +1,5 @@
-Datasets
+/Datasets
+/Models
 AIModel/IBM_Synthetic_AML-Data.pdf
-Models/
 AIModel/training-pmml.ipynb
 __pycache__
