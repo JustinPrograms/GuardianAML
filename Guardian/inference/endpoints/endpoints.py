@@ -15,7 +15,10 @@ GUARDIAN_ROOT = Path(__file__).resolve().parents[2]  # .../Guardian
 MODEL_PATH = GUARDIAN_ROOT / "models" / "model.onnx"
 CSV_PATH = GUARDIAN_ROOT / "datasets" / "engineered_testing_mini.csv"
 
+#---------------------------#
 #--------- HELPERS ---------#
+#---------------------------#
+
 
 def _norm_col(name: str) -> str:
     return str(name).strip().replace(" ", "_").replace("-", "_").replace("__", "_")
@@ -112,6 +115,7 @@ def _sample_random_accounts(df: pd.DataFrame, n: int) -> pd.DataFrame:
     )
     return subset
 
+
 def _find_target_account(df: pd.DataFrame, bank_name: str, account_name: str) -> pd.DataFrame:
     for col in ("From_Bank", "Account", "Timestamp"):
         if col not in df.columns:
@@ -127,6 +131,7 @@ def _find_target_account(df: pd.DataFrame, bank_name: str, account_name: str) ->
         raise ValueError(f"No transactions found for From_Bank={bank_name!r}, Account={account_name!r}")
 
     return matches.reset_index(drop=True)
+
 
 def _get_state(app: FastAPI) -> tuple[pd.DataFrame, ort.InferenceSession]:
     df = getattr(app.state, "df", None)
@@ -148,8 +153,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Guardian", version="1.0.0", lifespan=lifespan)
 
-
+#--------------------------------#
 #--------- BASE CLASSES ---------#
+#--------------------------------#
 
 # Requests
 class BatchRandomInferenceRequest(BaseModel):
@@ -177,7 +183,10 @@ class TargetedAccountResult(BaseModel):
     results: list[InferenceResult]
     num_flagged: int
 
+#------------------------------------------#
 #--------- Logical Implementation ---------#
+#------------------------------------------#
+
 
 def _row_to_result(row: pd.Series, prob: float, threshold: float) -> InferenceResult:
     bank = str(row.get("From_Bank", "")).strip()
@@ -209,10 +218,12 @@ def run_targeted_inference(df: pd.DataFrame, sess: ort.InferenceSession, req: Ta
     num_flagged = sum(1 for r in results if r.prediction)
     return BatchRandomInferenceResult(results=results, num_flagged=int(num_flagged))
 
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     df, _ = _get_state(app)
     return {"status": "ok", "rows": int(len(df))}
+
 
 @app.get("/", include_in_schema=False)
 def root() -> RedirectResponse:
@@ -228,6 +239,7 @@ def batch_random(req: BatchRandomInferenceRequest) -> BatchRandomInferenceResult
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+    
     
 @app.post("/inference/target-account", response_model=TargetedAccountResult)
 def batch_radom(req: TargetedAccountRequest) -> TargetedAccountResult:
