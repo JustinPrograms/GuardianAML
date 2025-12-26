@@ -20,10 +20,12 @@ CSV_PATH = GUARDIAN_ROOT / "datasets" / "engineered_testing_mini.csv"
 #---------------------------#
 
 
+# strips whitespace from column names 
 def _norm_col(name: str) -> str:
     return str(name).strip().replace(" ", "_").replace("-", "_").replace("__", "_")
 
 
+# load csv into df 
 def _load_engineered_csv(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     drop_cols = []
@@ -46,7 +48,7 @@ def _find_column(df: pd.DataFrame, name: str) -> str | None:
             return c
     return None
 
-
+# pandas series --> numpy array
 def _to_input_array(series: pd.Series, ort_type: str) -> np.ndarray:
     t = (ort_type or "").lower()
     if "string" in t:
@@ -96,7 +98,7 @@ def _timestamp_to_yyyymmdd(v: Any) -> int:
         raise ValueError(f"Invalid Timestamp value: {v!r}")
     return int(ts.strftime("%Y%m%d"))
 
-
+# random account feature 
 def _sample_random_accounts(df: pd.DataFrame, n: int) -> pd.DataFrame:
     for col in ("From_Bank", "Account", "Timestamp"):
         if col not in df.columns:
@@ -114,6 +116,101 @@ def _sample_random_accounts(df: pd.DataFrame, n: int) -> pd.DataFrame:
         .reset_index(drop=True)
     )
     return subset
+
+def _find_bank_transactions(df: pd.DataFrame, bank_name: str) -> pd.DataFrame:
+    if "From_Bank" not in df.columns:
+        raise KeyError(f"Engineered dataset missing column 'From_Bank' (available: {sorted(df.columns)})")
+
+    bank_name = str(bank_name).strip()
+    mask = df["From_Bank"].astype(str).str.strip().eq(bank_name)
+    matches = df.loc[mask]
+
+    if matches.empty:
+        raise ValueError(f"No transactions found for From_Bank={bank_name!r}")
+
+    return matches.reset_index(drop=True)
+
+# n risky transactions by bank 
+def run_bank_top_risky_inference(df: pd.DataFrame, sess: ort.InferenceSession, req: BankTopRiskyRequest) -> BankTopRiskyResult:
+    bank_df = _find_bank_transactions(df, req.bank_name)
+    # run infrerence on bank_df
+    _, probs = _run_onnx(sess, bank_df)
+    prob1 = probs[:, 1].astype(np.float32)
+
+    # Add probabilities to the dataframe
+    bank_df["prob"] = prob1
+    bank_df["flagged"] = bank_df["prob"] >= req.threshold
+
+    # Compute global baseline risk and Bayesian parameters
+    global_risk_rate = bank_df["prob"].mean()
+    k = 20  # Bayesian prior strength
+    alpha = global_risk_rate * k
+    beta = (1 - global_risk_rate) * k
+
+    # Group by account and aggregate results
+    agg_df = (
+        bank_df.groupby("Account")
+        .agg(
+            average_risk_prob=("prob", "mean"),
+            sum_risk_prob=("prob", "sum"),
+            num_flagged=("flagged", "sum"),
+            num_transactions=("prob", "count"),
+        )
+        .reset_index()
+    )
+
+    # Compute smoothed risk
+    agg_df["smoothed_risk"] = (agg_df["sum_risk_prob"] + alpha) / (agg_df["num_transactions"] + alpha + beta)
+
+    # Sort by smoothed risk and take top N
+    top_accounts = agg_df.sort_values("smoothed_risk", ascending=False).head(req.top_n)
+
+    # Format results
+    results = [
+        RiskyAccountResult(
+            bank_name=req.bank_name,
+            account_name=row["Account"],
+            average_risk_prob=row["average_risk_prob"],
+            smoothed_risk=row["smoothed_risk"],
+            num_flagged=int(row["num_flagged"]),
+            # contextualizing for skewing in accounts with low amount of transactions
+            num_transactions=int(row["num_transactions"]),
+        )
+        for _, row in top_accounts.iterrows()
+    ]
+    return BankTopRiskyResult(results=results)
+
+# bank-wide risk feautre
+
+# bank-wide risk feautre
+def run_bank_summary_inference(df: pd.DataFrame, sess: ort.InferenceSession, req: BankSummaryRequest) -> BankSummaryResult:
+    bank_df = _find_bank_transactions(df, req.bank_name)
+    _, probs = _run_onnx(sess, bank_df)
+    prob1 = probs[:, 1].astype(np.float32)
+
+    bank_df["prob"] = prob1
+    bank_df["flagged"] = bank_df["prob"] >= req.threshold
+
+    total_transactions = len(bank_df)
+    num_flagged = int(bank_df["flagged"].sum())
+    flagged_percentage = (num_flagged / total_transactions) * 100 if total_transactions > 0 else 0.0
+    average_risk_prob = float(bank_df["prob"].mean())
+
+    total_flagged_amount = None
+    amount_col = _find_column(bank_df, "Amount")
+    if amount_col:
+        total_flagged_amount = float(bank_df.loc[bank_df["flagged"], amount_col].sum())
+
+    return BankSummaryResult(
+        bank_name=req.bank_name,
+        total_transactions=total_transactions,
+        num_flagged=num_flagged,
+        flagged_percentage=flagged_percentage,
+        total_flagged_amount=total_flagged_amount,
+        average_risk_prob=average_risk_prob,
+    )
+
+
 
 
 def _find_target_account(df: pd.DataFrame, bank_name: str, account_name: str) -> pd.DataFrame:
@@ -165,7 +262,21 @@ class BatchRandomInferenceRequest(BaseModel):
 class TargetedAccountRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     bank_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank name") 
-    account_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank account name") 
+    account_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank account name")
+
+# bank-level 
+class BankSummaryRequest(BaseModel):
+    threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
+    bank_name: str = Field(..., min_length=9, max_length=9, description="9 character bank name")
+
+# tranasction per-bank level
+class BankTopRiskyRequest(BaseModel):
+    threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
+    bank_name: str = Field(..., min_length=9, max_length=9, description="9 character bank name")
+    top_n: PositiveInt = Field(5, gt=0, le=100, description="Number of top risky accounts to return")
+
+
+
 
 # Results 
 class InferenceResult(BaseModel):
@@ -175,9 +286,30 @@ class InferenceResult(BaseModel):
     account_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank account name") 
     timestamp: PositiveInt = Field(..., description="Timestamp in format YYYYMMDD")
 
+class BankSummaryResult(BaseModel):
+    bank_name: str
+    total_transactions: int
+    num_flagged: int
+    flagged_percentage: float = Field(..., ge=0.0, le=100.0)
+    total_flagged_amount: float | None = Field(None, description="Total monetary value of flagged transactions (if amount data is available)")
+    average_risk_prob: float = Field(..., ge=0.0, le=1.0)
+
+
+class RiskyAccountResult(BaseModel):
+    bank_name: str = Field(..., min_length=9, max_length=9, description="9 character bank name")
+    account_name: str = Field(..., min_length=9, max_length=9, description="9 character bank account name")
+    average_risk_prob: float = Field(..., ge=0.0, le=1.0, description="Average probability of money laundering for the account")
+    smoothed_risk: float = Field(..., ge=0.0, le=1.0, description="Bayesian-smoothed risk score for ranking")
+    num_flagged: int = Field(..., ge=0, description="Number of transactions flagged for this account")
+    num_transactions: int = Field(..., ge=0, description="Total number of transactions for this account")
+
+
 class BatchRandomInferenceResult(BaseModel):
     results: list[InferenceResult]
     num_flagged: int
+
+class BankTopRiskyResult(BaseModel):
+    results: list[RiskyAccountResult]
 
 class TargetedAccountResult(BaseModel):
     results: list[InferenceResult]
@@ -246,6 +378,26 @@ def batch_radom(req: TargetedAccountRequest) -> TargetedAccountResult:
     df, sess = _get_state(app)
     try:
         return run_targeted_inference(df, sess, req)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except KeyError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+@app.post("/inference/bank/top-risky-accounts", response_model=BankTopRiskyResult)
+def bank_top_risky_accounts(req: BankTopRiskyRequest) -> BankTopRiskyResult:
+    df, sess = _get_state(app)
+    try:
+        return run_bank_top_risky_inference(df, sess, req)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except KeyError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+@app.post("/inference/bank/summary", response_model=BankSummaryResult)
+def bank_summary(req: BankSummaryRequest) -> BankSummaryResult:
+    df, sess = _get_state(app)
+    try:
+        return run_bank_summary_inference(df, sess, req)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
