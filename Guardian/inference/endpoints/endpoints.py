@@ -93,11 +93,11 @@ def _run_onnx(sess: ort.InferenceSession, df: pd.DataFrame) -> tuple[np.ndarray,
     return label, probs
 
 
-def _timestamp_to_yyyymmdd(v: Any) -> int:
+def _timestamp_to_yyyymmddhhmmss(v: Any) -> int:
     ts = pd.to_datetime(v, errors="coerce")
     if pd.isna(ts):
         raise ValueError(f"Invalid Timestamp value: {v!r}")
-    return int(ts.strftime("%Y%m%d"))
+    return int(ts.strftime("%Y%m%d%H%M%S"))
 
 # random account feature 
 def _sample_random_accounts(df: pd.DataFrame, n: int) -> pd.DataFrame:
@@ -285,7 +285,7 @@ class InferenceResult(BaseModel):
     prediction: bool
     bank_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank name") 
     account_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank account name") 
-    timestamp: PositiveInt = Field(..., description="Timestamp in format YYYYMMDD")
+    timestamp: PositiveInt = Field(..., description="Timestamp in format YYYYMMDDHHMMSS")
 
 class BankSummaryResult(BaseModel):
     bank_name: str
@@ -326,7 +326,7 @@ def _row_to_result(row: pd.Series, prob: float, threshold: float) -> InferenceRe
         prediction=float(prob) >= float(threshold),
         bank_name=bank,
         account_name=account,
-        timestamp=_timestamp_to_yyyymmdd(row.get("Timestamp")),
+        timestamp=_timestamp_to_yyyymmddhhmmss(row.get("Timestamp")),
     )
 
 
