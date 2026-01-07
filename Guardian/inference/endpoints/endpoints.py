@@ -49,6 +49,7 @@ def _find_column(df: pd.DataFrame, name: str) -> str | None:
             return c
     return None
 
+
 # pandas series --> numpy array
 def _to_input_array(series: pd.Series, ort_type: str) -> np.ndarray:
     t = (ort_type or "").lower()
@@ -99,6 +100,7 @@ def _timestamp_to_yyyymmddhhmmss(v: Any) -> int:
         raise ValueError(f"Invalid Timestamp value: {v!r}")
     return int(ts.strftime("%Y%m%d%H%M%S"))
 
+
 # random account feature 
 def _sample_random_accounts(df: pd.DataFrame, n: int) -> pd.DataFrame:
     for col in ("From_Bank", "Account", "Timestamp"):
@@ -130,6 +132,7 @@ def _find_banks_transactions(df: pd.DataFrame, bank_name: str) -> pd.DataFrame:
         raise ValueError(f"No transactions found for From_Bank={bank_name!r}")
 
     return matches.reset_index(drop=True)
+
 
 # n risky transactions by bank 
 def run_bank_top_risky_inference(df: pd.DataFrame, sess: ort.InferenceSession, req: BankTopRiskyRequest) -> BankTopRiskyResult:
@@ -213,6 +216,7 @@ def run_bank_summary_inference(df: pd.DataFrame, sess: ort.InferenceSession, req
         average_risk_prob=average_risk_prob,
     )
 
+
 def _find_target_account_from(df: pd.DataFrame, bank_name: str, account_name: str) -> pd.DataFrame:
     for col in ("From_Bank", "Account", "Timestamp"):
         if col not in df.columns:
@@ -229,6 +233,7 @@ def _find_target_account_from(df: pd.DataFrame, bank_name: str, account_name: st
 
     return matches.reset_index(drop=True)
 
+
 def _find_target_account_to(df: pd.DataFrame, bank_name: str, account_name: str) -> pd.DataFrame:
     for col in ("To_Bank", "To_Account", "Timestamp"):
         if col not in df.columns:
@@ -244,6 +249,7 @@ def _find_target_account_to(df: pd.DataFrame, bank_name: str, account_name: str)
         raise ValueError(f"No transactions found for To_Bank={bank_name!r}, To_Account={account_name!r}")
 
     return matches.reset_index(drop=True)
+
 
 def _get_state(app: FastAPI) -> tuple[pd.DataFrame, ort.InferenceSession]:
     df = getattr(app.state, "df", None)
@@ -274,29 +280,34 @@ app = FastAPI(title="Guardian", version="1.0.0", lifespan=lifespan)
 class BatchRandomInferenceRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     num_inferences: PositiveInt = Field(..., gt=0, le=10000, description="Number of random accounts to inference")
+    only_positive: bool
 
 # For specific account number under bank
 class TargetedAccountRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     bank_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank name") 
     account_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank account name")
+    only_positive: bool
 
 # For specific account number under bank
 class ToTargetedAccountRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     bank_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank name") 
     account_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank account name")
+    only_positive: bool
 
 # Bank-level 
 class BankSummaryRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     bank_name: str = Field(..., min_length=9, max_length=9, description="9 character bank name")
+    only_positive: bool
 
 # Tranasction per-bank level
 class BankTopRiskyRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     bank_name: str = Field(..., min_length=9, max_length=9, description="9 character bank name")
     top_n : PositiveInt = Field(5, gt=0, le=100, description="Number of top risky accounts to return")
+    only_positive: bool
 
 # --------- Results ---------
 # Returned by eeach inference
@@ -342,9 +353,13 @@ class ToTargetedAccountResult(BaseModel):
 #--------- Logical Implementation ---------#
 #------------------------------------------#
 
-def _row_to_result(row: pd.Series, prob: float, threshold: float) -> InferenceResult:
-    bank = str(row.get("From_Bank", "")).strip()
-    account = str(row.get("Account", "")).strip()
+def _row_to_result(row: pd.Series, prob: float, threshold: float, only_positive: bool, bank_col: str = "From_Bank", account_col: str = "Account") -> InferenceResult:
+    bank = str(row.get(bank_col, "")).strip()
+    account = str(row.get(account_col, "")).strip()
+
+    # Only return if: only_positive = true && flagged || only_positive = false
+    if only_positive and float(prob) < float(threshold):
+        return None
     return InferenceResult(
         prob=float(prob),
         prediction=float(prob) >= float(threshold),
@@ -359,7 +374,10 @@ def run_batch_random_inference(df: pd.DataFrame, sess: ort.InferenceSession, req
     _, probs = _run_onnx(sess, batch_df)
     prob1 = probs[:, 1].astype(np.float32)
 
-    results = [_row_to_result(batch_df.iloc[i], float(prob1[i]), req.threshold) for i in range(len(batch_df))]
+    results = [
+        r for i in range(len(batch_df))
+        if (r := _row_to_result(batch_df.iloc[i], float(prob1[i]), req.threshold, req.only_positive)) is not None
+    ]
     num_flagged = sum(1 for r in results if r.prediction)
     return BatchRandomInferenceResult(results=results, num_flagged=int(num_flagged))
 
@@ -367,13 +385,42 @@ def run_batch_random_inference(df: pd.DataFrame, sess: ort.InferenceSession, req
 def run_targeted_inference(df: pd.DataFrame, sess: ort.InferenceSession, req: TargetedAccountRequest, from_account: bool) -> TargetedAccountResult:
     if from_account:
         targeted_df = _find_target_account_from(df, req.bank_name, req.account_name)
+        bank_col = "From_Bank"
+        account_col = "Account"
     else:
         targeted_df = _find_target_account_to(df, req.bank_name, req.account_name)
+        bank_col = "To_Bank"
+        account_col = "To_Account"
     _, probs = _run_onnx(sess, targeted_df)
     prob1 = np.asarray(probs).reshape(-1, 2)[:, 1].astype(np.float32)
     
-    results = [_row_to_result(targeted_df.iloc[i], float(prob1[i]), req.threshold) for i in range(len(targeted_df))]
+    results = [
+        r for i in range(len(targeted_df))
+        if (r := _row_to_result(targeted_df.iloc[i], float(prob1[i]), req.threshold, req.only_positive, bank_col=bank_col, account_col=account_col)) is not None
+    ]
+
     num_flagged = sum(1 for r in results if r.prediction)
+    return TargetedAccountResult(results=results, num_flagged=int(num_flagged))
+
+
+def run_targeted_inference_combined(df: pd.DataFrame, sess: ort.InferenceSession, req: TargetedAccountRequest) -> TargetedAccountResult:
+    results: list[InferenceResult] = []
+    num_flagged = 0
+    errors: list[str] = []
+
+    for from_account in (True, False):
+        try:
+            res = run_targeted_inference(df, sess, req, from_account), 
+            
+        except ValueError as e:
+            errors.append(str(e))
+            continue
+        results.extend(res.results)
+        num_flagged += res.num_flagged
+
+    if not results:
+        raise ValueError("; ".join(errors) if errors else "No transactions found for target account")
+
     return TargetedAccountResult(results=results, num_flagged=int(num_flagged))
 
 
@@ -413,6 +460,7 @@ def target_account_from(req: TargetedAccountRequest) -> TargetedAccountResult:
     except KeyError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
+
 @app.post("/inference/target-account/to", response_model=TargetedAccountResult)
 def target_account_to(req: TargetedAccountRequest) -> TargetedAccountResult:
     df, sess = _get_state(app)
@@ -422,6 +470,18 @@ def target_account_to(req: TargetedAccountRequest) -> TargetedAccountResult:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/inference/target-account", response_model=TargetedAccountResult)
+def target_account_combined(req: TargetedAccountRequest) -> TargetedAccountResult:
+    df, sess = _get_state(app)
+    try:
+        return run_targeted_inference_combined(df, sess, req)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except KeyError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.post("/inference/bank/top-risky-accounts", response_model=BankTopRiskyResult)
 def bank_top_risky_accounts(req: BankTopRiskyRequest) -> BankTopRiskyResult:
