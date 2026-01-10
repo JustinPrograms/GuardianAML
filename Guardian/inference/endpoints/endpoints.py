@@ -13,14 +13,7 @@ from pydantic import BaseModel, Field, PositiveInt
 from fastapi.middleware.cors import CORSMiddleware
 
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # or ["http://localhost:3000"] for more security
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
 
 GUARDIAN_ROOT = Path(__file__).resolve().parents[2]  # .../Guardian
 MODEL_PATH = GUARDIAN_ROOT / "models" / "model.onnx"
@@ -282,6 +275,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Guardian", version="1.0.0", lifespan=lifespan)
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or ["http://localhost:3000"] for more security
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 #--------------------------------#
 #--------- BASE CLASSES ---------#
 #--------------------------------#
