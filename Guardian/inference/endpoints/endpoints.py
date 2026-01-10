@@ -137,13 +137,7 @@ def _find_banks_transactions(df: pd.DataFrame, bank_name: str) -> pd.DataFrame:
 BankTopRiskyRankBy = Literal["num_flagged", "smoothed", "average"]
 
 
-def _add_or_bypass_smoothed_risk(
-    agg_df: pd.DataFrame,
-    *,
-    global_risk_rate: float,
-    k: float = 20.0,
-    enabled: bool = True,
-) -> pd.DataFrame:
+def _add_or_bypass_smoothed_risk(agg_df: pd.DataFrame, *, global_risk_rate: float, k: float = 20.0, enabled: bool = True,) -> pd.DataFrame:
     """Ensure agg_df has a stable `smoothed_risk` column.
 
     When enabled=True, computes Bayesian-smoothed risk:
