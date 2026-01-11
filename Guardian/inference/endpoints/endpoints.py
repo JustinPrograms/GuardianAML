@@ -10,10 +10,6 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, PositiveInt
-from fastapi.middleware.cors import CORSMiddleware
-
-
-
 
 GUARDIAN_ROOT = Path(__file__).resolve().parents[2]  # .../Guardian
 MODEL_PATH = GUARDIAN_ROOT / "models" / "model.onnx"
@@ -140,8 +136,14 @@ def _find_banks_transactions(df: pd.DataFrame, bank_name: str) -> pd.DataFrame:
 
 BankTopRiskyRankBy = Literal["num_flagged", "smoothed", "average"]
 
-
-def _add_or_bypass_smoothed_risk(agg_df: pd.DataFrame, *, global_risk_rate: float, k: float = 20.0, enabled: bool = True,) -> pd.DataFrame:
+# 
+def _add_or_bypass_smoothed_risk(
+    agg_df: pd.DataFrame,
+    *,
+    global_risk_rate: float,
+    k: float = 20.0,
+    enabled: bool = True,
+) -> pd.DataFrame:
     """Ensure agg_df has a stable `smoothed_risk` column.
 
     When enabled=True, computes Bayesian-smoothed risk:
@@ -327,14 +329,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Guardian", version="1.0.0", lifespan=lifespan)
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # or ["http://localhost:3000"] for more security
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 #--------------------------------#
 #--------- BASE CLASSES ---------#
 #--------------------------------#
@@ -486,7 +480,7 @@ def run_targeted_inference_combined(df: pd.DataFrame, sess: ort.InferenceSession
 
     for from_account in (True, False):
         try:
-            res = run_targeted_inference(df, sess, req, from_account), 
+            res = run_targeted_inference(df, sess, req, from_account)
             
         except ValueError as e:
             errors.append(str(e))
