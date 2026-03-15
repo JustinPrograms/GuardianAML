@@ -9,12 +9,13 @@ import onnxruntime as ort
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, PositiveInt
 
 GUARDIAN_ROOT = Path(__file__).resolve().parents[2]  # .../Guardian
 MODEL_PATH = GUARDIAN_ROOT / "models" / "model.onnx"
 CSV_PATH = GUARDIAN_ROOT / "data" / "engineered_testing_mini.csv"
+FRONTEND_PATH = GUARDIAN_ROOT / "frontend" / "index.html"
 
 #---------------------------#
 #--------- HELPERS ---------#
@@ -444,7 +445,12 @@ def health() -> dict[str, Any]:
 
 @app.get("/", include_in_schema=False)
 def root() -> RedirectResponse:
-    return RedirectResponse(url="/docs")
+    return RedirectResponse(url="/index")
+
+
+@app.get("/index", include_in_schema=False)
+def frontend() -> FileResponse:
+    return FileResponse(FRONTEND_PATH)
 
 
 @app.post("/inference/batch-random", response_model=BatchRandomInferenceResult)

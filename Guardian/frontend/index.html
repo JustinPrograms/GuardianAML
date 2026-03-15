@@ -649,14 +649,21 @@
   function apiBase() { return document.getElementById('api-base').value.replace(/\/$/, ''); }
 
   async function apiFetch(path, body) {
+    const t0 = performance.now();
     const res = await fetch(apiBase() + path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     const data = await res.json();
+    const elapsed = performance.now() - t0;
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-    return data;
+    return { data, elapsed };
+  }
+
+  function fmtElapsed(ms) {
+    if (ms < 1000) return ms.toFixed(0) + ' ms';
+    return (ms / 1000).toFixed(2) + ' s';
   }
 
   function loading(el) {
@@ -703,7 +710,7 @@
 
   // ── INFERENCE RESULTS TABLE ──
 
-  function renderInferenceResults(el, data) {
+  function renderInferenceResults(el, data, elapsed) {
     const { results, num_flagged } = data;
     const total = results.length;
     const pct = total > 0 ? ((num_flagged / total) * 100).toFixed(1) : '0.0';
@@ -721,6 +728,10 @@
         <div class="stat-card">
           <div class="stat-label">Flag Rate</div>
           <div class="stat-val ${parseFloat(pct) > 20 ? 'risk' : 'safe'}">${pct}%</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Response Time</div>
+          <div class="stat-val" style="color:var(--accent-3)">${fmtElapsed(elapsed)}</div>
         </div>
       </div>`;
 
@@ -761,12 +772,12 @@
     const el = document.getElementById('br-results');
     loading(el);
     try {
-      const data = await apiFetch('/inference/batch-random', {
+      const { data, elapsed } = await apiFetch('/inference/batch-random', {
         num_inferences: parseInt(document.getElementById('br-n').value),
         threshold:      parseFloat(document.getElementById('br-thresh').value),
         only_positive:  document.getElementById('br-only-pos').checked,
       });
-      renderInferenceResults(el, data);
+      renderInferenceResults(el, data, elapsed);
     } catch(e) { showError(el, e.message); }
   }
 
@@ -776,13 +787,13 @@
     const el = document.getElementById('tf-results');
     loading(el);
     try {
-      const data = await apiFetch('/inference/target-account/from', {
+      const { data, elapsed } = await apiFetch('/inference/target-account/from', {
         bank_name:     document.getElementById('tf-bank').value.trim(),
         account_name:  document.getElementById('tf-acct').value.trim(),
         threshold:     parseFloat(document.getElementById('tf-thresh').value),
         only_positive: document.getElementById('tf-only-pos').checked,
       });
-      renderInferenceResults(el, data);
+      renderInferenceResults(el, data, elapsed);
     } catch(e) { showError(el, e.message); }
   }
 
@@ -792,13 +803,13 @@
     const el = document.getElementById('tt-results');
     loading(el);
     try {
-      const data = await apiFetch('/inference/target-account/to', {
+      const { data, elapsed } = await apiFetch('/inference/target-account/to', {
         bank_name:     document.getElementById('tt-bank').value.trim(),
         account_name:  document.getElementById('tt-acct').value.trim(),
         threshold:     parseFloat(document.getElementById('tt-thresh').value),
         only_positive: document.getElementById('tt-only-pos').checked,
       });
-      renderInferenceResults(el, data);
+      renderInferenceResults(el, data, elapsed);
     } catch(e) { showError(el, e.message); }
   }
 
@@ -808,13 +819,13 @@
     const el = document.getElementById('tc-results');
     loading(el);
     try {
-      const data = await apiFetch('/inference/target-account', {
+      const { data, elapsed } = await apiFetch('/inference/target-account', {
         bank_name:     document.getElementById('tc-bank').value.trim(),
         account_name:  document.getElementById('tc-acct').value.trim(),
         threshold:     parseFloat(document.getElementById('tc-thresh').value),
         only_positive: document.getElementById('tc-only-pos').checked,
       });
-      renderInferenceResults(el, data);
+      renderInferenceResults(el, data, elapsed);
     } catch(e) { showError(el, e.message); }
   }
 
@@ -824,7 +835,7 @@
     const el = document.getElementById('tr-results');
     loading(el);
     try {
-      const data = await apiFetch('/inference/bank/top-risky-accounts', {
+      const { data, elapsed } = await apiFetch('/inference/bank/top-risky-accounts', {
         bank_name:     document.getElementById('tr-bank').value.trim(),
         top_n:         parseInt(document.getElementById('tr-n').value),
         threshold:     parseFloat(document.getElementById('tr-thresh').value),
@@ -848,6 +859,20 @@
         </tr>`).join('');
 
       el.innerHTML = `
+        <div class="stat-row">
+          <div class="stat-card">
+            <div class="stat-label">Accounts Returned</div>
+            <div class="stat-val acct">${results.length}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Flagged (top acct)</div>
+            <div class="stat-val risk">${results[0].num_flagged} / ${results[0].num_transactions}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Response Time</div>
+            <div class="stat-val" style="color:var(--accent-3)">${fmtElapsed(elapsed)}</div>
+          </div>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -872,7 +897,7 @@
     const el = document.getElementById('bs-results');
     loading(el);
     try {
-      const r = await apiFetch('/inference/bank/summary', {
+      const { data: r, elapsed } = await apiFetch('/inference/bank/summary', {
         bank_name:     document.getElementById('bs-bank').value.trim(),
         threshold:     parseFloat(document.getElementById('bs-thresh').value),
         only_positive: document.getElementById('bs-only-pos').checked,
@@ -908,6 +933,10 @@
               <div class="stat-label">Avg Risk Score</div>
               <div class="stat-val ${r.average_risk_prob > 0.5 ? 'risk' : 'safe'}">${(r.average_risk_prob * 100).toFixed(2)}%</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-label">Response Time</div>
+              <div class="stat-val" style="color:var(--accent-3)">${fmtElapsed(elapsed)}</div>
+            </div>
           </div>
         </div>`;
     } catch(e) { showError(el, e.message); }
@@ -942,7 +971,7 @@
   });
 
   checkHealth();
-  setInterval(checkHealth, 30000);
+  setInterval(checkHealth, 1200000);
 </script>
 </body>
 </html>
