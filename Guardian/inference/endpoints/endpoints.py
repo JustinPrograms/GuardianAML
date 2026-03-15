@@ -8,12 +8,13 @@ import numpy as np
 import onnxruntime as ort
 import pandas as pd
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, PositiveInt
 
 GUARDIAN_ROOT = Path(__file__).resolve().parents[2]  # .../Guardian
 MODEL_PATH = GUARDIAN_ROOT / "models" / "model.onnx"
-CSV_PATH = GUARDIAN_ROOT / "datasets" / "engineered_testing_mini.csv"
+CSV_PATH = GUARDIAN_ROOT / "data" / "engineered_testing_mini.csv"
 
 #---------------------------#
 #--------- HELPERS ---------#
@@ -328,6 +329,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Guardian", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 #--------------------------------#
 #--------- BASE CLASSES ---------#

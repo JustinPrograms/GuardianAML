@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guardian AML</title>
+  <style>
+    :root {
+      --bg:        #080613;
+      --surface:   #110e24;
+      --card:      #1a1535;
+      --card-2:    #211b42;
+      --border:    #2e2458;
+      --accent:    #7c3aed;
+      --accent-2:  #9d5ff5;
+      --accent-3:  #c4b5fd;
+      --text:      #e2d9f3;
+      --muted:     #8b7fad;
+      --success:   #22c55e;
+      --warn:      #f59e0b;
+      --danger:    #ef4444;
+      --radius:    10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      width: 240px;
+      min-width: 240px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+    }
+
+    #logo {
+      padding: 24px 20px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #logo .shield {
+      font-size: 28px;
+      display: inline-block;
+      margin-right: 8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    #logo .name { font-size: 20px; font-weight: 700; letter-spacing: 1px; }
+    #logo .sub  { font-size: 11px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+
+    #health-indicator {
+      margin: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    #health-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #health-dot.ok     { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    #health-dot.error  { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+
+    nav { padding: 8px 12px; flex: 1; overflow-y: auto; }
+
+    .nav-section { margin-bottom: 20px; }
+    .nav-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1.5px; color: var(--muted); padding: 6px 8px 4px;
+    }
+
+    .nav-btn {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 9px 12px; border-radius: 7px;
+      background: transparent; border: none; cursor: pointer;
+      color: var(--muted); font-size: 13.5px; text-align: left;
+      transition: background 0.15s, color 0.15s;
+    }
+    .nav-btn:hover  { background: var(--card); color: var(--text); }
+    .nav-btn.active { background: var(--accent); color: #fff; }
+    .nav-btn .icon  { font-size: 16px; width: 20px; text-align: center; }
+
+    /* ── MAIN ── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #topbar {
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex; align-items: center; gap: 12px;
+    }
+    #topbar h1 { font-size: 17px; font-weight: 600; }
+    #topbar p  { font-size: 13px; color: var(--muted); margin-top: 1px; }
+
+    #content {
+      flex: 1; overflow-y: auto;
+      padding: 28px 32px;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 26px;
+    }
+    .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+
+    /* ── FORM ── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group.full { grid-column: 1 / -1; }
+
+    label { font-size: 12px; color: var(--muted); font-weight: 500; }
+
+    input[type=text], input[type=number] {
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-size: 13.5px;
+      outline: none;
+      transition: border 0.15s;
+      width: 100%;
+    }
+    input:focus { border-color: var(--accent); }
+    input::placeholder { color: var(--muted); opacity: 0.6; }
+
+    .range-row { display: flex; align-items: center; gap: 12px; }
+    input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+    .range-val { min-width: 36px; font-size: 13px; font-weight: 600; color: var(--accent-3); text-align: right; }
+
+    .checkbox-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .checkbox-row input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+    .checkbox-row span { font-size: 13.5px; }
+
+    .btn {
+      padding: 10px 22px; border-radius: 7px; border: none; cursor: pointer;
+      font-size: 14px; font-weight: 600; transition: opacity 0.15s, transform 0.1s;
+      display: inline-flex; align-items: center; gap: 7px;
+    }
+    .btn:hover  { opacity: 0.88; }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--card-2); color: var(--text); border: 1px solid var(--border); }
+
+    .form-actions { margin-top: 18px; display: flex; gap: 10px; align-items: center; }
+
+    /* ── RESULTS ── */
+    #results-panel {
+      border-top: 1px solid var(--border);
+      margin-top: 4px;
+    }
+
+    .results-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 0 12px;
+    }
+    .results-header h3 { font-size: 14px; font-weight: 600; }
+
+    .badge {
+      font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .badge-flagged { background: rgba(239,68,68,0.18); color: var(--danger); border: 1px solid rgba(239,68,68,0.35); }
+    .badge-clean   { background: rgba(34,197,94,0.14); color: var(--success); border: 1px solid rgba(34,197,94,0.3); }
+    .badge-neutral { background: rgba(124,58,237,0.2); color: var(--accent-3); border: 1px solid rgba(124,58,237,0.4); }
+
+    /* Stat cards row */
+    .stat-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+    .stat-card {
+      flex: 1; min-width: 130px;
+      background: var(--card-2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .stat-card .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+    .stat-card .stat-val { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .stat-card .stat-val.risk  { color: var(--danger); }
+    .stat-card .stat-val.safe  { color: var(--success); }
+    .stat-card .stat-val.acct  { color: var(--accent-3); }
+    .stat-card .stat-val.amt   { color: var(--warn); }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead tr { background: var(--card-2); }
+    th {
+      padding: 10px 14px; text-align: left;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.8px; color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    td { padding: 10px 14px; border-bottom: 1px solid rgba(46,36,88,0.5); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: rgba(124,58,237,0.06); }
+
+    .risk-bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .risk-bar { height: 6px; border-radius: 3px; min-width: 2px; }
+    .risk-val { font-weight: 600; font-size: 12.5px; min-width: 42px; }
+
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 12px;
+      font-size: 11px; font-weight: 700;
+    }
+    .pill-flag  { background: rgba(239,68,68,0.2);  color: var(--danger); }
+    .pill-clean { background: rgba(34,197,94,0.15); color: var(--success); }
+
+    /* Loading */
+    .spinner {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      animation: spin 0.6s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error */
+    .error-box {
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.35);
+      border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #fca5a5;
+    }
+
+    /* Page visibility */
+    .page { display: none; }
+    .page.active { display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── DASHBOARD ── */
+    .dashboard-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;
+    }
+    .endpoint-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px; cursor: pointer; transition: border-color 0.15s, transform 0.1s;
+    }
+    .endpoint-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .endpoint-card .ec-icon { font-size: 26px; margin-bottom: 10px; }
+    .endpoint-card .ec-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .endpoint-card .ec-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+    .endpoint-card .ec-method {
+      display: inline-block; margin-top: 10px; font-size: 10px; font-weight: 700;
+      padding: 2px 7px; border-radius: 4px;
+      background: rgba(124,58,237,0.2); color: var(--accent-3);
+    }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── API BASE URL BAR ── */
+    #base-url-bar {
+      padding: 0 20px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    #base-url-bar label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
+    #base-url-bar input {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 10px; color: var(--accent-3); font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div id="logo">
+    <div>
+      <span class="shield">⬡</span>
+      <span class="name">GUARDIAN</span>
+    </div>
+    <div class="sub">AML Detection System</div>
+  </div>
+
+  <div id="health-indicator">
+    <span id="health-dot"></span>
+    <span id="health-text">Connecting...</span>
+  </div>
+
+  <div id="base-url-bar">
+    <label>API Base URL</label>
+    <input id="api-base" type="text" value="http://127.0.0.1:8080" />
+  </div>
+
+  <nav>
+    <div class="nav-section">
+      <div class="nav-label">Overview</div>
+      <button class="nav-btn active" data-page="dashboard" onclick="navigate(this)">
+        <span class="icon">◈</span> Dashboard
+      </button>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Inference</div>
+      <button class="nav-btn" data-page="batch-random" onclick="navigate(this)">
+        <span class="icon">⊞</span> Batch Random
+      </button>
+      <button class="nav-btn" data-page="target-from" onclick="navigate(this)">
+        <span class="icon">→</span> Account (From)
+      </button>
+      <button class="nav-btn" data-page="target-to" onclick="navigate(this)">
+        <span class="icon">←</span> Account (To)
+      </button>
+      <button class="nav-btn" data-page="target-combined" onclick="navigate(this)">
+        <span class="icon">⇌</span> Account (Both)
+      </button>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Bank Analysis</div>
+      <button class="nav-btn" data-page="top-risky" onclick="navigate(this)">
+        <span class="icon">▲</span> Top Risky Accounts
+      </button>
+      <button class="nav-btn" data-page="bank-summary" onclick="navigate(this)">
+        <span class="icon">≡</span> Bank Summary
+      </button>
+    </div>
+  </nav>
+</aside>
+
+<!-- MAIN -->
+<main id="main">
+  <div id="topbar">
+    <div>
+      <h1 id="page-title">Dashboard</h1>
+      <p id="page-desc">Guardian Anti-Money Laundering Detection — v1.0</p>
+    </div>
+  </div>
+
+  <div id="content">
+
+    <!-- DASHBOARD -->
+    <div id="page-dashboard" class="page active">
+      <div class="card">
+        <h2>Welcome to Guardian AML</h2>
+        <p style="color:var(--muted);font-size:13.5px;line-height:1.7;max-width:640px;">
+          Guardian is an ML-powered Anti-Money Laundering detection system running on LinuxONE servers.
+          Use the sidebar to navigate between inference tools, or click a card below to jump directly to an endpoint.
+        </p>
+      </div>
+      <div class="dashboard-grid">
+        <div class="endpoint-card" onclick="navigate(document.querySelector('[data-page=batch-random]'))">
+          <div class="ec-icon">⊞</div>
+          <div class="ec-name">Batch Random Inference</div>
+          <div class="ec-desc">Randomly sample N accounts from the dataset and run AML inference across all of them.</div>
+          <div class="ec-method">POST /inference/batch-random</div>
+        </div>
+        <div class="endpoint-card" onclick="navigate(document.querySelector('[data-page=target-from]'))">
+          <div class="ec-icon">→</div>
+          <div class="ec-name">Target Account (From)</div>
+          <div class="ec-desc">Analyze all outgoing transactions sent from a specific bank account.</div>
+          <div class="ec-method">POST /inference/target-account/from</div>
+        </div>
+        <div class="endpoint-card" onclick="navigate(document.querySelector('[data-page=target-to]'))">
+          <div class="ec-icon">←</div>
+          <div class="ec-name">Target Account (To)</div>
+          <div class="ec-desc">Analyze all incoming transactions received by a specific bank account.</div>
+          <div class="ec-method">POST /inference/target-account/to</div>
+        </div>
+        <div class="endpoint-card" onclick="navigate(document.querySelector('[data-page=target-combined]'))">
+          <div class="ec-icon">⇌</div>
+          <div class="ec-name">Target Account (Both)</div>
+          <div class="ec-desc">Analyze all transactions — both incoming and outgoing — for a specific account.</div>
+          <div class="ec-method">POST /inference/target-account</div>
+        </div>
+        <div class="endpoint-card" onclick="navigate(document.querySelector('[data-page=top-risky]'))">
+          <div class="ec-icon">▲</div>
+          <div class="ec-name">Top Risky Accounts</div>
+          <div class="ec-desc">Find the N highest-risk accounts within a bank using Bayesian-smoothed risk scoring.</div>
+          <div class="ec-method">POST /inference/bank/top-risky-accounts</div>
+        </div>
+        <div class="endpoint-card" onclick="navigate(document.querySelector('[data-page=bank-summary]'))">
+          <div class="ec-icon">≡</div>
+          <div class="ec-name">Bank Summary</div>
+          <div class="ec-desc">Get bank-wide AML risk statistics: flagged count, flagged value, and average risk probability.</div>
+          <div class="ec-method">POST /inference/bank/summary</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BATCH RANDOM -->
+    <div id="page-batch-random" class="page">
+      <div class="card">
+        <h2>Batch Random Inference</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Number of Accounts</label>
+            <input type="number" id="br-n" value="50" min="1" max="10000" />
+          </div>
+          <div class="form-group">
+            <label>Threshold — <span id="br-thresh-val">0.50</span></label>
+            <div class="range-row">
+              <input type="range" id="br-thresh" min="0.01" max="1" step="0.01" value="0.5"
+                oninput="document.getElementById('br-thresh-val').textContent=parseFloat(this.value).toFixed(2)" />
+            </div>
+          </div>
+          <div class="form-group" style="justify-content:flex-end;padding-bottom:2px;">
+            <label style="visibility:hidden">_</label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="br-only-pos" />
+              <span>Only show flagged</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runBatchRandom()">
+            <span>▶</span> Run Inference
+          </button>
+        </div>
+      </div>
+      <div id="br-results"></div>
+    </div>
+
+    <!-- TARGET FROM -->
+    <div id="page-target-from" class="page">
+      <div class="card">
+        <h2>Target Account — Outgoing Transactions</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Bank Name (9 chars)</label>
+            <input type="text" id="tf-bank" placeholder="e.g. 800ACBANK" maxlength="9" />
+          </div>
+          <div class="form-group">
+            <label>Account Name (9 chars)</label>
+            <input type="text" id="tf-acct" placeholder="e.g. 12345678A" maxlength="9" />
+          </div>
+          <div class="form-group">
+            <label>Threshold — <span id="tf-thresh-val">0.50</span></label>
+            <div class="range-row">
+              <input type="range" id="tf-thresh" min="0.01" max="1" step="0.01" value="0.5"
+                oninput="document.getElementById('tf-thresh-val').textContent=parseFloat(this.value).toFixed(2)" />
+            </div>
+          </div>
+          <div class="form-group" style="justify-content:flex-end;padding-bottom:2px;">
+            <label style="visibility:hidden">_</label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="tf-only-pos" />
+              <span>Only show flagged</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runTargetFrom()">
+            <span>▶</span> Run Inference
+          </button>
+        </div>
+      </div>
+      <div id="tf-results"></div>
+    </div>
+
+    <!-- TARGET TO -->
+    <div id="page-target-to" class="page">
+      <div class="card">
+        <h2>Target Account — Incoming Transactions</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Bank Name (9 chars)</label>
+            <input type="text" id="tt-bank" placeholder="e.g. 800ACBANK" maxlength="9" />
+          </div>
+          <div class="form-group">
+            <label>Account Name (9 chars)</label>
+            <input type="text" id="tt-acct" placeholder="e.g. 12345678A" maxlength="9" />
+          </div>
+          <div class="form-group">
+            <label>Threshold — <span id="tt-thresh-val">0.50</span></label>
+            <div class="range-row">
+              <input type="range" id="tt-thresh" min="0.01" max="1" step="0.01" value="0.5"
+                oninput="document.getElementById('tt-thresh-val').textContent=parseFloat(this.value).toFixed(2)" />
+            </div>
+          </div>
+          <div class="form-group" style="justify-content:flex-end;padding-bottom:2px;">
+            <label style="visibility:hidden">_</label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="tt-only-pos" />
+              <span>Only show flagged</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runTargetTo()">
+            <span>▶</span> Run Inference
+          </button>
+        </div>
+      </div>
+      <div id="tt-results"></div>
+    </div>
+
+    <!-- TARGET COMBINED -->
+    <div id="page-target-combined" class="page">
+      <div class="card">
+        <h2>Target Account — All Transactions</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Bank Name (9 chars)</label>
+            <input type="text" id="tc-bank" placeholder="e.g. 800ACBANK" maxlength="9" />
+          </div>
+          <div class="form-group">
+            <label>Account Name (9 chars)</label>
+            <input type="text" id="tc-acct" placeholder="e.g. 12345678A" maxlength="9" />
+          </div>
+          <div class="form-group">
+            <label>Threshold — <span id="tc-thresh-val">0.50</span></label>
+            <div class="range-row">
+              <input type="range" id="tc-thresh" min="0.01" max="1" step="0.01" value="0.5"
+                oninput="document.getElementById('tc-thresh-val').textContent=parseFloat(this.value).toFixed(2)" />
+            </div>
+          </div>
+          <div class="form-group" style="justify-content:flex-end;padding-bottom:2px;">
+            <label style="visibility:hidden">_</label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="tc-only-pos" />
+              <span>Only show flagged</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runTargetCombined()">
+            <span>▶</span> Run Inference
+          </button>
+        </div>
+      </div>
+      <div id="tc-results"></div>
+    </div>
+
+    <!-- TOP RISKY -->
+    <div id="page-top-risky" class="page">
+      <div class="card">
+        <h2>Top Risky Accounts</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Bank Name (9 chars)</label>
+            <input type="text" id="tr-bank" placeholder="e.g. 800ACBANK" maxlength="9" />
+          </div>
+          <div class="form-group">
+            <label>Top N Accounts</label>
+            <input type="number" id="tr-n" value="10" min="1" max="100" />
+          </div>
+          <div class="form-group">
+            <label>Threshold — <span id="tr-thresh-val">0.50</span></label>
+            <div class="range-row">
+              <input type="range" id="tr-thresh" min="0.01" max="1" step="0.01" value="0.5"
+                oninput="document.getElementById('tr-thresh-val').textContent=parseFloat(this.value).toFixed(2)" />
+            </div>
+          </div>
+          <div class="form-group" style="justify-content:flex-end;padding-bottom:2px;">
+            <label style="visibility:hidden">_</label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="tr-only-pos" />
+              <span>Only show flagged</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runTopRisky()">
+            <span>▶</span> Run Analysis
+          </button>
+        </div>
+      </div>
+      <div id="tr-results"></div>
+    </div>
+
+    <!-- BANK SUMMARY -->
+    <div id="page-bank-summary" class="page">
+      <div class="card">
+        <h2>Bank Summary</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Bank Name (9 chars)</label>
+            <input type="text" id="bs-bank" placeholder="e.g. 800ACBANK" maxlength="9" />
+          </div>
+          <div class="form-group">
+            <label>Threshold — <span id="bs-thresh-val">0.50</span></label>
+            <div class="range-row">
+              <input type="range" id="bs-thresh" min="0.01" max="1" step="0.01" value="0.5"
+                oninput="document.getElementById('bs-thresh-val').textContent=parseFloat(this.value).toFixed(2)" />
+            </div>
+          </div>
+          <div class="form-group" style="justify-content:flex-end;padding-bottom:2px;">
+            <label style="visibility:hidden">_</label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="bs-only-pos" />
+              <span>Only show flagged</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runBankSummary()">
+            <span>▶</span> Run Analysis
+          </button>
+        </div>
+      </div>
+      <div id="bs-results"></div>
+    </div>
+
+  </div><!-- /content -->
+</main>
+
+<script>
+  // ── UTILS ──
+
+  const pageInfo = {
+    'dashboard':       { title: 'Dashboard',               desc: 'Guardian Anti-Money Laundering Detection — v1.0' },
+    'batch-random':    { title: 'Batch Random Inference',   desc: 'Sample N random accounts and run AML inference' },
+    'target-from':     { title: 'Target Account (From)',    desc: 'Analyze outgoing transactions from a specific account' },
+    'target-to':       { title: 'Target Account (To)',      desc: 'Analyze incoming transactions to a specific account' },
+    'target-combined': { title: 'Target Account (Both)',    desc: 'Analyze all transactions for a specific account' },
+    'top-risky':       { title: 'Top Risky Accounts',       desc: 'Find the highest-risk accounts within a bank' },
+    'bank-summary':    { title: 'Bank Summary',             desc: 'Bank-wide AML risk statistics and overview' },
+  };
+
+  function navigate(btn) {
+    const page = btn.dataset.page;
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    const info = pageInfo[page] || {};
+    document.getElementById('page-title').textContent = info.title || page;
+    document.getElementById('page-desc').textContent  = info.desc  || '';
+  }
+
+  function apiBase() { return document.getElementById('api-base').value.replace(/\/$/, ''); }
+
+  async function apiFetch(path, body) {
+    const res = await fetch(apiBase() + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    return data;
+  }
+
+  function loading(el) {
+    el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;display:flex;align-items:center;justify-content:center;gap:10px;"><span class="spinner"></span>Running inference…</div>`;
+  }
+
+  function showError(el, msg) {
+    el.innerHTML = `<div class="error-box">⚠ ${escHtml(msg)}</div>`;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function riskColor(p) {
+    if (p >= 0.75) return 'var(--danger)';
+    if (p >= 0.50) return 'var(--warn)';
+    if (p >= 0.25) return '#a3e635';
+    return 'var(--success)';
+  }
+
+  function riskBar(p) {
+    const w = Math.max(2, Math.round(p * 100));
+    const c = riskColor(p);
+    return `<div class="risk-bar-wrap">
+      <div class="risk-bar" style="width:${w}px;max-width:100px;background:${c}"></div>
+      <span class="risk-val" style="color:${c}">${(p * 100).toFixed(1)}%</span>
+    </div>`;
+  }
+
+  function flagPill(prediction) {
+    return prediction
+      ? '<span class="pill pill-flag">FLAGGED</span>'
+      : '<span class="pill pill-clean">CLEAN</span>';
+  }
+
+  function fmtTimestamp(ts) {
+    const s = String(ts);
+    if (s.length === 14) {
+      return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)} ${s.slice(8,10)}:${s.slice(10,12)}:${s.slice(12,14)}`;
+    }
+    return s;
+  }
+
+  // ── INFERENCE RESULTS TABLE ──
+
+  function renderInferenceResults(el, data) {
+    const { results, num_flagged } = data;
+    const total = results.length;
+    const pct = total > 0 ? ((num_flagged / total) * 100).toFixed(1) : '0.0';
+
+    const statsHtml = `
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-label">Total Returned</div>
+          <div class="stat-val acct">${total.toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Flagged</div>
+          <div class="stat-val ${num_flagged > 0 ? 'risk' : 'safe'}">${num_flagged.toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Flag Rate</div>
+          <div class="stat-val ${parseFloat(pct) > 20 ? 'risk' : 'safe'}">${pct}%</div>
+        </div>
+      </div>`;
+
+    if (total === 0) {
+      el.innerHTML = statsHtml + `<div style="text-align:center;padding:24px;color:var(--muted);font-size:13.5px;">No results returned. Try lowering the threshold or disabling "Only show flagged".</div>`;
+      return;
+    }
+
+    const rows = results.map(r => `
+      <tr>
+        <td style="font-family:monospace;font-size:12.5px;">${escHtml(r.bank_name)}</td>
+        <td style="font-family:monospace;font-size:12.5px;">${escHtml(r.account_name)}</td>
+        <td>${fmtTimestamp(r.timestamp)}</td>
+        <td>${riskBar(r.prob)}</td>
+        <td>${flagPill(r.prediction)}</td>
+      </tr>`).join('');
+
+    el.innerHTML = statsHtml + `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Bank</th>
+              <th>Account</th>
+              <th>Timestamp</th>
+              <th>Risk Probability</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  // ── BATCH RANDOM ──
+
+  async function runBatchRandom() {
+    const el = document.getElementById('br-results');
+    loading(el);
+    try {
+      const data = await apiFetch('/inference/batch-random', {
+        num_inferences: parseInt(document.getElementById('br-n').value),
+        threshold:      parseFloat(document.getElementById('br-thresh').value),
+        only_positive:  document.getElementById('br-only-pos').checked,
+      });
+      renderInferenceResults(el, data);
+    } catch(e) { showError(el, e.message); }
+  }
+
+  // ── TARGET FROM ──
+
+  async function runTargetFrom() {
+    const el = document.getElementById('tf-results');
+    loading(el);
+    try {
+      const data = await apiFetch('/inference/target-account/from', {
+        bank_name:     document.getElementById('tf-bank').value.trim(),
+        account_name:  document.getElementById('tf-acct').value.trim(),
+        threshold:     parseFloat(document.getElementById('tf-thresh').value),
+        only_positive: document.getElementById('tf-only-pos').checked,
+      });
+      renderInferenceResults(el, data);
+    } catch(e) { showError(el, e.message); }
+  }
+
+  // ── TARGET TO ──
+
+  async function runTargetTo() {
+    const el = document.getElementById('tt-results');
+    loading(el);
+    try {
+      const data = await apiFetch('/inference/target-account/to', {
+        bank_name:     document.getElementById('tt-bank').value.trim(),
+        account_name:  document.getElementById('tt-acct').value.trim(),
+        threshold:     parseFloat(document.getElementById('tt-thresh').value),
+        only_positive: document.getElementById('tt-only-pos').checked,
+      });
+      renderInferenceResults(el, data);
+    } catch(e) { showError(el, e.message); }
+  }
+
+  // ── TARGET COMBINED ──
+
+  async function runTargetCombined() {
+    const el = document.getElementById('tc-results');
+    loading(el);
+    try {
+      const data = await apiFetch('/inference/target-account', {
+        bank_name:     document.getElementById('tc-bank').value.trim(),
+        account_name:  document.getElementById('tc-acct').value.trim(),
+        threshold:     parseFloat(document.getElementById('tc-thresh').value),
+        only_positive: document.getElementById('tc-only-pos').checked,
+      });
+      renderInferenceResults(el, data);
+    } catch(e) { showError(el, e.message); }
+  }
+
+  // ── TOP RISKY ──
+
+  async function runTopRisky() {
+    const el = document.getElementById('tr-results');
+    loading(el);
+    try {
+      const data = await apiFetch('/inference/bank/top-risky-accounts', {
+        bank_name:     document.getElementById('tr-bank').value.trim(),
+        top_n:         parseInt(document.getElementById('tr-n').value),
+        threshold:     parseFloat(document.getElementById('tr-thresh').value),
+        only_positive: document.getElementById('tr-only-pos').checked,
+      });
+
+      const { results } = data;
+      if (!results || results.length === 0) {
+        el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--muted);">No risky accounts found.</div>`;
+        return;
+      }
+
+      const rows = results.map((r, i) => `
+        <tr>
+          <td style="color:var(--muted);font-size:12px;">#${i+1}</td>
+          <td style="font-family:monospace;font-size:12.5px;">${escHtml(r.bank_name)}</td>
+          <td style="font-family:monospace;font-size:12.5px;">${escHtml(r.account_name)}</td>
+          <td>${riskBar(r.average_risk_prob)}</td>
+          <td>${riskBar(r.smoothed_risk)}</td>
+          <td><span style="color:var(--danger);font-weight:600;">${r.num_flagged}</span> / ${r.num_transactions}</td>
+        </tr>`).join('');
+
+      el.innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Bank</th>
+                <th>Account</th>
+                <th>Avg Risk</th>
+                <th>Smoothed Risk</th>
+                <th>Flagged / Total Txns</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    } catch(e) { showError(el, e.message); }
+  }
+
+  // ── BANK SUMMARY ──
+
+  async function runBankSummary() {
+    const el = document.getElementById('bs-results');
+    loading(el);
+    try {
+      const r = await apiFetch('/inference/bank/summary', {
+        bank_name:     document.getElementById('bs-bank').value.trim(),
+        threshold:     parseFloat(document.getElementById('bs-thresh').value),
+        only_positive: document.getElementById('bs-only-pos').checked,
+      });
+
+      const flagPct = r.flagged_percentage.toFixed(2);
+      const riskClass = parseFloat(flagPct) > 20 ? 'risk' : 'safe';
+      const amtFormatted = r.total_flagged_amount != null
+        ? '$' + r.total_flagged_amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})
+        : 'N/A';
+
+      el.innerHTML = `
+        <div class="card">
+          <h2 style="margin-bottom:18px;">Results for <span style="color:var(--accent-3);font-family:monospace;">${escHtml(r.bank_name)}</span></h2>
+          <div class="stat-row">
+            <div class="stat-card">
+              <div class="stat-label">Total Transactions</div>
+              <div class="stat-val acct">${r.total_transactions.toLocaleString()}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Flagged Transactions</div>
+              <div class="stat-val ${r.num_flagged > 0 ? 'risk' : 'safe'}">${r.num_flagged.toLocaleString()}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Flag Rate</div>
+              <div class="stat-val ${riskClass}">${flagPct}%</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Flagged Amount</div>
+              <div class="stat-val amt">${amtFormatted}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Avg Risk Score</div>
+              <div class="stat-val ${r.average_risk_prob > 0.5 ? 'risk' : 'safe'}">${(r.average_risk_prob * 100).toFixed(2)}%</div>
+            </div>
+          </div>
+        </div>`;
+    } catch(e) { showError(el, e.message); }
+  }
+
+  // ── HEALTH CHECK ──
+
+  async function checkHealth() {
+    const dot  = document.getElementById('health-dot');
+    const text = document.getElementById('health-text');
+    try {
+      const res  = await fetch(apiBase() + '/health');
+      const data = await res.json();
+      if (data.status === 'ok') {
+        dot.className = 'ok';
+        text.textContent = `Online · ${data.rows.toLocaleString()} rows`;
+      } else {
+        dot.className = 'error';
+        text.textContent = 'Degraded';
+      }
+    } catch {
+      dot.className = 'error';
+      text.textContent = 'Offline';
+    }
+  }
+
+  // Re-check health when base URL changes
+  document.getElementById('api-base').addEventListener('change', () => {
+    document.getElementById('health-dot').className = '';
+    document.getElementById('health-text').textContent = 'Connecting...';
+    checkHealth();
+  });
+
+  checkHealth();
+  setInterval(checkHealth, 30000);
+</script>
+</body>
+</html>
