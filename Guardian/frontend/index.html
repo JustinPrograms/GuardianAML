@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />  
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>Guardian AML</title>
   <style>
     :root {
@@ -277,16 +278,23 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-    /* ── API BASE URL BAR ── */
-    #base-url-bar {
-      padding: 0 20px 16px;
+    /* ── SIDEBAR CONTROLS ── */
+    #base-url-bar, #model-bar {
+      padding: 0 20px 14px;
       border-bottom: 1px solid var(--border);
     }
-    #base-url-bar label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
+    #model-bar { padding-top: 14px; }
+    #base-url-bar label, #model-bar label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
     #base-url-bar input {
       width: 100%; background: var(--bg); border: 1px solid var(--border);
       border-radius: 6px; padding: 7px 10px; color: var(--accent-3); font-size: 12px;
     }
+    #model-select {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 10px; color: var(--accent-3); font-size: 12px;
+      cursor: pointer; outline: none;
+    }
+    #model-select:focus { border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -308,7 +316,14 @@
 
   <div id="base-url-bar">
     <label>API Base URL</label>
-    <input id="api-base" type="text" value="http://127.0.0.1:8080" />
+    <input id="api-base" type="text" value="http://127.0.0.1:8000" />
+  </div>
+
+  <div id="model-bar">
+    <label>Model</label>
+    <select id="model-select">
+      <option value="">Loading…</option>
+    </select>
   </div>
 
   <nav>
@@ -647,6 +662,18 @@
   }
 
   function apiBase() { return document.getElementById('api-base').value.replace(/\/$/, ''); }
+  function selectedModel() { return document.getElementById('model-select').value || 'model.onnx'; }
+
+  async function fetchModels() {
+    const sel = document.getElementById('model-select');
+    try {
+      const res = await fetch(apiBase() + '/models');
+      const { models } = await res.json();
+      sel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+    } catch {
+      sel.innerHTML = '<option value="model.onnx">model.onnx</option>';
+    }
+  }
 
   async function apiFetch(path, body) {
     const t0 = performance.now();
@@ -776,6 +803,7 @@
         num_inferences: parseInt(document.getElementById('br-n').value),
         threshold:      parseFloat(document.getElementById('br-thresh').value),
         only_positive:  document.getElementById('br-only-pos').checked,
+        model:          selectedModel(),
       });
       renderInferenceResults(el, data, elapsed);
     } catch(e) { showError(el, e.message); }
@@ -792,6 +820,7 @@
         account_name:  document.getElementById('tf-acct').value.trim(),
         threshold:     parseFloat(document.getElementById('tf-thresh').value),
         only_positive: document.getElementById('tf-only-pos').checked,
+        model:         selectedModel(),
       });
       renderInferenceResults(el, data, elapsed);
     } catch(e) { showError(el, e.message); }
@@ -808,6 +837,7 @@
         account_name:  document.getElementById('tt-acct').value.trim(),
         threshold:     parseFloat(document.getElementById('tt-thresh').value),
         only_positive: document.getElementById('tt-only-pos').checked,
+        model:         selectedModel(),
       });
       renderInferenceResults(el, data, elapsed);
     } catch(e) { showError(el, e.message); }
@@ -824,6 +854,7 @@
         account_name:  document.getElementById('tc-acct').value.trim(),
         threshold:     parseFloat(document.getElementById('tc-thresh').value),
         only_positive: document.getElementById('tc-only-pos').checked,
+        model:         selectedModel(),
       });
       renderInferenceResults(el, data, elapsed);
     } catch(e) { showError(el, e.message); }
@@ -840,6 +871,7 @@
         top_n:         parseInt(document.getElementById('tr-n').value),
         threshold:     parseFloat(document.getElementById('tr-thresh').value),
         only_positive: document.getElementById('tr-only-pos').checked,
+        model:         selectedModel(),
       });
 
       const { results } = data;
@@ -901,6 +933,7 @@
         bank_name:     document.getElementById('bs-bank').value.trim(),
         threshold:     parseFloat(document.getElementById('bs-thresh').value),
         only_positive: document.getElementById('bs-only-pos').checked,
+        model:         selectedModel(),
       });
 
       const flagPct = r.flagged_percentage.toFixed(2);
@@ -952,7 +985,7 @@
       const data = await res.json();
       if (data.status === 'ok') {
         dot.className = 'ok';
-        text.textContent = `Online · ${data.rows.toLocaleString()} rows`;
+        text.textContent = `Online · ${data.rows.toLocaleString()} transactions`;
       } else {
         dot.className = 'error';
         text.textContent = 'Degraded';
@@ -963,14 +996,16 @@
     }
   }
 
-  // Re-check health when base URL changes
+  // Re-check health and models when base URL changes
   document.getElementById('api-base').addEventListener('change', () => {
     document.getElementById('health-dot').className = '';
     document.getElementById('health-text').textContent = 'Connecting...';
     checkHealth();
+    fetchModels();
   });
 
   checkHealth();
+  fetchModels();
   setInterval(checkHealth, 1200000);
 </script>
 </body>

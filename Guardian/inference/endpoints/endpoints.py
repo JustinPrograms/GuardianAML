@@ -253,19 +253,31 @@ def _find_target_account_to(df: pd.DataFrame, bank_name: str, account_name: str)
     return matches.reset_index(drop=True)
 
 
-def _get_state(app: FastAPI) -> tuple[pd.DataFrame, ort.InferenceSession]:
+def _get_df(app: FastAPI) -> pd.DataFrame:
     df = getattr(app.state, "df", None)
-    sess = getattr(app.state, "ort_session", None)
-    if df is None or sess is None:
-        raise HTTPException(status_code=503, detail="Model or dataset not loaded yet")
-    return df, sess
+    if df is None:
+        raise HTTPException(status_code=503, detail="Dataset not loaded yet")
+    return df
+
+
+def _get_session(app: FastAPI, model_name: str) -> ort.InferenceSession:
+    if "/" in model_name or "\\" in model_name or ".." in model_name:
+        raise HTTPException(status_code=400, detail="Invalid model name")
+    sessions: dict[str, ort.InferenceSession] = app.state.sessions
+    if model_name not in sessions:
+        model_path = GUARDIAN_ROOT / "models" / model_name
+        if not model_path.exists():
+            raise HTTPException(status_code=404, detail=f"Model {model_name!r} not found")
+        sessions[model_name] = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    return sessions[model_name]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         app.state.df = _load_engineered_csv(CSV_PATH)
-        app.state.ort_session = ort.InferenceSession(str(MODEL_PATH), providers=["CPUExecutionProvider"])
+        app.state.sessions = {}
+        _get_session(app, MODEL_PATH.name)
     except Exception as e:
         raise RuntimeError(f"Startup load failed: {e}") from e
     yield
@@ -290,26 +302,30 @@ class BatchRandomInferenceRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     num_inferences: PositiveInt = Field(..., gt=0, le=10000, description="Number of random accounts to inference")
     only_positive: bool
+    model: str = Field(MODEL_PATH.name)
 
 # For specific account number under bank
 class TargetedAccountRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
-    bank_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank name") 
+    bank_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank name")
     account_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank account name")
     only_positive: bool
+    model: str = Field(MODEL_PATH.name)
 
 # For specific account number under bank
 class ToTargetedAccountRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
-    bank_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank name") 
+    bank_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank name")
     account_name: str = Field(..., min_length=9, max_length=9,  description="9 character bank account name")
     only_positive: bool
+    model: str = Field(MODEL_PATH.name)
 
-# Bank-level 
+# Bank-level
 class BankSummaryRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     bank_name: str = Field(..., min_length=9, max_length=9, description="9 character bank name")
     only_positive: bool
+    model: str = Field(MODEL_PATH.name)
 
 # Tranasction per-bank level
 class BankTopRiskyRequest(BaseModel):
@@ -317,6 +333,7 @@ class BankTopRiskyRequest(BaseModel):
     bank_name: str = Field(..., min_length=9, max_length=9, description="9 character bank name")
     top_n : PositiveInt = Field(5, gt=0, le=100, description="Number of top risky accounts to return")
     only_positive: bool
+    model: str = Field(MODEL_PATH.name)
 
 # --------- Results ---------
 # Returned by eeach inference
@@ -439,8 +456,15 @@ def run_targeted_inference_combined(df: pd.DataFrame, sess: ort.InferenceSession
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    df, _ = _get_state(app)
+    df = _get_df(app)
     return {"status": "ok", "rows": int(len(df))}
+
+
+@app.get("/models")
+def list_models() -> dict[str, Any]:
+    models_dir = GUARDIAN_ROOT / "models"
+    files = sorted(f.name for f in models_dir.iterdir() if f.suffix == ".onnx")
+    return {"models": files}
 
 
 @app.get("/", include_in_schema=False)
@@ -455,18 +479,20 @@ def frontend() -> FileResponse:
 
 @app.post("/inference/batch-random", response_model=BatchRandomInferenceResult)
 def batch_random(req: BatchRandomInferenceRequest) -> BatchRandomInferenceResult:
-    df, sess = _get_state(app)
+    df = _get_df(app)
+    sess = _get_session(app, req.model)
     try:
         return run_batch_random_inference(df, sess, req)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
-    
-    
+
+
 @app.post("/inference/target-account/from", response_model=TargetedAccountResult)
 def target_account_from(req: TargetedAccountRequest) -> TargetedAccountResult:
-    df, sess = _get_state(app)
+    df = _get_df(app)
+    sess = _get_session(app, req.model)
     try:
         return run_targeted_inference(df, sess, req, from_account=True)
     except ValueError as e:
@@ -477,7 +503,8 @@ def target_account_from(req: TargetedAccountRequest) -> TargetedAccountResult:
 
 @app.post("/inference/target-account/to", response_model=TargetedAccountResult)
 def target_account_to(req: TargetedAccountRequest) -> TargetedAccountResult:
-    df, sess = _get_state(app)
+    df = _get_df(app)
+    sess = _get_session(app, req.model)
     try:
         return run_targeted_inference(df, sess, req, from_account=False)
     except ValueError as e:
@@ -488,7 +515,8 @@ def target_account_to(req: TargetedAccountRequest) -> TargetedAccountResult:
 
 @app.post("/inference/target-account", response_model=TargetedAccountResult)
 def target_account_combined(req: TargetedAccountRequest) -> TargetedAccountResult:
-    df, sess = _get_state(app)
+    df = _get_df(app)
+    sess = _get_session(app, req.model)
     try:
         return run_targeted_inference_combined(df, sess, req)
     except ValueError as e:
@@ -499,7 +527,8 @@ def target_account_combined(req: TargetedAccountRequest) -> TargetedAccountResul
 
 @app.post("/inference/bank/top-risky-accounts", response_model=BankTopRiskyResult)
 def bank_top_risky_accounts(req: BankTopRiskyRequest) -> BankTopRiskyResult:
-    df, sess = _get_state(app)
+    df = _get_df(app)
+    sess = _get_session(app, req.model)
     try:
         return run_bank_top_risky_inference(df, sess, req)
     except ValueError as e:
@@ -510,7 +539,8 @@ def bank_top_risky_accounts(req: BankTopRiskyRequest) -> BankTopRiskyResult:
 
 @app.post("/inference/bank/summary", response_model=BankSummaryResult)
 def bank_summary(req: BankSummaryRequest) -> BankSummaryResult:
-    df, sess = _get_state(app)
+    df = _get_df(app)
+    sess = _get_session(app, req.model)
     try:
         return run_bank_summary_inference(df, sess, req)
     except ValueError as e:

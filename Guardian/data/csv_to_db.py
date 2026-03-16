@@ -14,8 +14,8 @@ from pathlib import Path
 import pandas as pd
 
 GUARDIAN_ROOT = Path(__file__).resolve().parent.parent   # .../Guardian
-DEFAULT_CSV   = GUARDIAN_ROOT / "data" / "engineered_testing_mini.csv"
-DEFAULT_DB    = GUARDIAN_ROOT / "data" / "Transaction.db"
+DEFAULT_CSV = GUARDIAN_ROOT / "data" / "engineered_testing_mini.csv"
+DEFAULT_DB = GUARDIAN_ROOT / "data" / "Transaction.db"
 
 CHUNK_SIZE = 50_000
 
