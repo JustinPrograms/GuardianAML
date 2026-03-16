@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, PositiveInt
 
 GUARDIAN_ROOT = Path(__file__).resolve().parents[2]
-MODEL_PATH = GUARDIAN_ROOT / "models" / "model.onnx"
+MODEL_PATH = GUARDIAN_ROOT / "models" / "small-model.onnx"
 DB_PATH = GUARDIAN_ROOT / "data" / "Transaction.db"
 FRONTEND_PATH = GUARDIAN_ROOT / "frontend" / "index.html"
 
