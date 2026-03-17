@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, PositiveInt
 
 GUARDIAN_ROOT = Path(__file__).resolve().parents[2]
-MODEL_PATH = GUARDIAN_ROOT / "models" / "small-model.onnx"
+MODEL_PATH = GUARDIAN_ROOT / "models" / "small-model.onnx" # FIXME: reference the directory not a specific model
 DB_PATH = GUARDIAN_ROOT / "data" / "Transaction.db"
 FRONTEND_PATH = GUARDIAN_ROOT / "frontend" / "index.html"
 
@@ -260,14 +260,7 @@ class BankSummaryResult(BaseModel):
 #--------- Logical Implementation ---------#
 #------------------------------------------#
 
-def _row_to_result(
-    row: pd.Series,
-    prob: float,
-    threshold: float,
-    only_positive: bool,
-    bank_col: str = "From_Bank",
-    account_col: str = "Account",
-) -> InferenceResult | None:
+def _row_to_result(row: pd.Series, prob: float, threshold: float, only_positive: bool, bank_col: str = "From_Bank", account_col: str = "Account",) -> InferenceResult | None:
     if only_positive and float(prob) < float(threshold):
         return None
     bank = str(row.get(bank_col, "")).strip()
@@ -281,9 +274,7 @@ def _row_to_result(
     )
 
 
-def run_batch_random_inference(
-    conn: sqlite3.Connection, sess: ort.InferenceSession, req: BatchRandomInferenceRequest
-) -> BatchRandomInferenceResult:
+def run_batch_random_inference(conn: sqlite3.Connection, sess: ort.InferenceSession, req: BatchRandomInferenceRequest) -> BatchRandomInferenceResult:
     batch_df = _sample_random_accounts_db(conn, int(req.num_inferences))
     _, probs = _run_onnx(sess, batch_df)
     prob1 = probs[:, 1].astype(np.float32)
@@ -294,12 +285,7 @@ def run_batch_random_inference(
     return BatchRandomInferenceResult(results=results, num_flagged=sum(1 for r in results if r.prediction))
 
 
-def run_targeted_inference(
-    conn: sqlite3.Connection,
-    sess: ort.InferenceSession,
-    req: TargetedAccountRequest,
-    from_account: bool,
-) -> TargetedAccountResult:
+def run_targeted_inference(conn: sqlite3.Connection ,sess: ort.InferenceSession ,req: TargetedAccountRequest, from_account: bool,) -> TargetedAccountResult:
     if from_account:
         targeted_df = _find_target_account_from_db(conn, req.bank_name, req.account_name)
         bank_col, account_col = "From_Bank", "Account"
@@ -318,9 +304,7 @@ def run_targeted_inference(
     return TargetedAccountResult(results=results, num_flagged=sum(1 for r in results if r.prediction))
 
 
-def run_targeted_inference_combined(
-    conn: sqlite3.Connection, sess: ort.InferenceSession, req: TargetedAccountRequest
-) -> TargetedAccountResult:
+def run_targeted_inference_combined(conn: sqlite3.Connection, sess: ort.InferenceSession, req: TargetedAccountRequest) -> TargetedAccountResult:
     results: list[InferenceResult] = []
     errors: list[str] = []
     for from_account in (True, False):
@@ -335,9 +319,7 @@ def run_targeted_inference_combined(
     return TargetedAccountResult(results=results, num_flagged=sum(1 for r in results if r.prediction))
 
 
-def run_bank_top_risky_inference(
-    conn: sqlite3.Connection, sess: ort.InferenceSession, req: BankTopRiskyRequest
-) -> BankTopRiskyResult:
+def run_bank_top_risky_inference(conn: sqlite3.Connection, sess: ort.InferenceSession, req: BankTopRiskyRequest) -> BankTopRiskyResult:
     bank_df = _find_bank_transactions_db(conn, req.bank_name)
     _, probs = _run_onnx(sess, bank_df)
     prob1 = probs[:, 1].astype(np.float32)
@@ -374,9 +356,7 @@ def run_bank_top_risky_inference(
     return BankTopRiskyResult(results=results)
 
 
-def run_bank_summary_inference(
-    conn: sqlite3.Connection, sess: ort.InferenceSession, req: BankSummaryRequest
-) -> BankSummaryResult:
+def run_bank_summary_inference(conn: sqlite3.Connection, sess: ort.InferenceSession, req: BankSummaryRequest) -> BankSummaryResult:
     bank_df = _find_bank_transactions_db(conn, req.bank_name)
     _, probs = _run_onnx(sess, bank_df)
     prob1 = probs[:, 1].astype(np.float32)
