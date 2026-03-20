@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, PositiveInt
 
 GUARDIAN_ROOT = Path(__file__).resolve().parents[2]  # .../Guardian
-MODEL_PATH = GUARDIAN_ROOT / "models" / "small-model.onnx"
+MODEL_PATH = GUARDIAN_ROOT / "models" / "standard-model.onnx" # FIXME: reference the directory not a specific model
 CSV_PATH = GUARDIAN_ROOT / "data" / "engineered_testing_mini.csv"
 FRONTEND_PATH = GUARDIAN_ROOT / "frontend" / "index.html"
 
