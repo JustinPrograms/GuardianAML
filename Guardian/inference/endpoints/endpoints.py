@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import onnxruntime as ort
@@ -136,6 +136,61 @@ def _find_banks_transactions(df: pd.DataFrame, bank_name: str) -> pd.DataFrame:
     return matches.reset_index(drop=True)
 
 
+BankTopRiskyRankBy = Literal["num_flagged", "smoothed", "average"]
+
+# 
+def _add_or_bypass_smoothed_risk(
+    agg_df: pd.DataFrame,
+    *,
+    global_risk_rate: float,
+    k: float = 20.0,
+    enabled: bool = True,
+) -> pd.DataFrame:
+    """Ensure agg_df has a stable `smoothed_risk` column.
+
+    When enabled=True, computes Bayesian-smoothed risk:
+        smoothed_risk = (sum_risk_prob + alpha) / (num_transactions + alpha + beta)
+    using alpha = global_risk_rate * k and beta = (1 - global_risk_rate) * k.
+
+    When enabled=False, sets:
+        smoothed_risk = average_risk_prob
+    so the response shape stays the same.
+    """
+    if not enabled:
+        agg_df["smoothed_risk"] = agg_df["average_risk_prob"].astype(float)
+        return agg_df
+
+    global_risk_rate = float(np.clip(float(global_risk_rate), 0.0, 1.0))
+    k = float(k)
+    alpha = global_risk_rate * k
+    beta = (1.0 - global_risk_rate) * k
+
+    denom = agg_df["num_transactions"].astype(float) + alpha + beta
+    agg_df["smoothed_risk"] = (agg_df["sum_risk_prob"].astype(float) + alpha) / denom
+    return agg_df
+
+
+def _rank_bank_accounts(agg_df: pd.DataFrame, *, rank_by: BankTopRiskyRankBy) -> pd.DataFrame:
+    """Sort bank accounts by the requested ranking strategy with tie-breakers."""
+    if rank_by == "num_flagged":
+        return agg_df.sort_values(
+            ["num_flagged", "smoothed_risk", "average_risk_prob", "num_transactions"],
+            ascending=[False, False, False, False],
+        )
+
+    if rank_by == "average":
+        return agg_df.sort_values(
+            ["average_risk_prob", "num_flagged", "num_transactions"],
+            ascending=[False, False, False],
+        )
+
+    # rank_by == "smoothed"
+    return agg_df.sort_values(
+        ["smoothed_risk", "num_flagged", "num_transactions"],
+        ascending=[False, False, False],
+    )
+
+
 # n risky transactions by bank 
 def run_bank_top_risky_inference(df: pd.DataFrame, sess: ort.InferenceSession, req: BankTopRiskyRequest) -> BankTopRiskyResult:
     bank_df = _find_banks_transactions(df, req.bank_name)
@@ -148,10 +203,7 @@ def run_bank_top_risky_inference(df: pd.DataFrame, sess: ort.InferenceSession, r
     bank_df["flagged"] = bank_df["prob"] >= req.threshold
 
     # Compute global baseline risk and Bayesian parameters
-    global_risk_rate = bank_df["prob"].mean()
-    k = 20  # Bayesian prior strength
-    alpha = global_risk_rate * k
-    beta = (1 - global_risk_rate) * k
+    global_risk_rate = float(bank_df["prob"].mean())
 
     # Group by account and aggregate results
     agg_df = (
@@ -165,11 +217,17 @@ def run_bank_top_risky_inference(df: pd.DataFrame, sess: ort.InferenceSession, r
         .reset_index()
     )
 
-    # Compute smoothed risk
-    agg_df["smoothed_risk"] = (agg_df["sum_risk_prob"] + alpha) / (agg_df["num_transactions"] + alpha + beta)
+    # Add smoothed risk (or bypass) in one place
+    agg_df = _add_or_bypass_smoothed_risk(
+        agg_df,
+        global_risk_rate=global_risk_rate,
+        k=20.0,
+        enabled=getattr(req, "use_smoothing", True),
+    )
 
-    # Sort by smoothed risk and take top N
-    top_accounts = agg_df.sort_values("smoothed_risk", ascending=False).head(req.top_n)
+    # Default ranking = highest number of risky transactions; can toggle to smoothed
+    rank_by: BankTopRiskyRankBy = getattr(req, "rank_by", "num_flagged")
+    top_accounts = _rank_bank_accounts(agg_df, rank_by=rank_by).head(req.top_n)
 
     # Format results
     results = [
@@ -332,6 +390,18 @@ class BankTopRiskyRequest(BaseModel):
     threshold: float = Field(..., gt=0, le=1.0, description="Probaility threshold of money laundering transaction")
     bank_name: str = Field(..., min_length=9, max_length=9, description="9 character bank name")
     top_n : PositiveInt = Field(5, gt=0, le=100, description="Number of top risky accounts to return")
+
+    # Ranking toggle: default is highest number of risky transactions
+    rank_by: BankTopRiskyRankBy = Field(
+        "num_flagged",
+        description="Ranking strategy: num_flagged (default), smoothed, or average",
+    )
+
+    # Smoothing toggle: when false, smoothed_risk == average_risk_prob
+    use_smoothing: bool = Field(
+        True,
+        description="If false, bypass Bayesian smoothing (smoothed_risk equals average_risk_prob).",
+    )
     only_positive: bool
     model: str = Field(MODEL_PATH.name)
 
