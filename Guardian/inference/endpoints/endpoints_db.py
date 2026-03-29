@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, PositiveInt
 
 GUARDIAN_ROOT = Path(__file__).resolve().parents[2]
-MODEL_PATH = GUARDIAN_ROOT / "models" / "small-model.onnx" # FIXME: reference the directory not a specific model
+MODEL_PATH = GUARDIAN_ROOT / "models" / "full-scale-model.onnx" # FIXME: reference the directory not a specific model
 DB_PATH = GUARDIAN_ROOT / "data" / "Transaction.db"
 FRONTEND_PATH = GUARDIAN_ROOT / "frontend" / "index.html"
 
@@ -78,11 +78,11 @@ def _run_onnx(sess: ort.InferenceSession, df: pd.DataFrame) -> tuple[np.ndarray,
     return np.asarray(label).reshape(-1), np.asarray(probs).reshape(-1, 2)
 
 
-def _timestamp_to_yyyymmddhhmmss(v: Any) -> int:
-    ts = pd.to_datetime(v, errors="coerce")
-    if pd.isna(ts):
-        raise ValueError(f"Invalid Timestamp value: {v!r}")
-    return int(ts.strftime("%Y%m%d%H%M%S"))
+def _vectorized_timestamps(df: pd.DataFrame) -> np.ndarray:
+    ts = pd.to_datetime(df["Timestamp"], errors="coerce")
+    if ts.isna().any():
+        raise ValueError("Invalid Timestamp values in batch")
+    return ts.dt.strftime("%Y%m%d%H%M%S").astype(np.int64).values
 
 
 #---------------------------------#
@@ -260,32 +260,35 @@ class BankSummaryResult(BaseModel):
 #--------- Logical Implementation ---------#
 #------------------------------------------#
 
-def _row_to_result(row: pd.Series, prob: float, threshold: float, only_positive: bool, bank_col: str = "From_Bank", account_col: str = "Account",) -> InferenceResult | None:
-    if only_positive and float(prob) < float(threshold):
-        return None
-    bank = str(row.get(bank_col, "")).strip()
-    account = str(row.get(account_col, "")).strip()
-    return InferenceResult(
-        prob=float(prob),
-        prediction=float(prob) >= float(threshold),
-        bank_name=bank,
-        account_name=account,
-        timestamp=_timestamp_to_yyyymmddhhmmss(row.get("Timestamp")),
-    )
+def _build_results(work_df: pd.DataFrame, work_probs: np.ndarray, threshold: float, bank_col: str, account_col: str) -> list[InferenceResult]:
+    ts_ints = _vectorized_timestamps(work_df)
+    return [
+        InferenceResult(
+            prob=float(p),
+            prediction=float(p) >= threshold,
+            bank_name=getattr(row, bank_col).strip(),
+            account_name=getattr(row, account_col).strip(),
+            timestamp=int(ts),
+        )
+        for row, p, ts in zip(work_df.itertuples(index=False), work_probs, ts_ints)
+    ]
 
 
 def run_batch_random_inference(conn: sqlite3.Connection, sess: ort.InferenceSession, req: BatchRandomInferenceRequest) -> BatchRandomInferenceResult:
     batch_df = _sample_random_accounts_db(conn, int(req.num_inferences))
     _, probs = _run_onnx(sess, batch_df)
     prob1 = probs[:, 1].astype(np.float32)
-    results = [
-        r for i in range(len(batch_df))
-        if (r := _row_to_result(batch_df.iloc[i], float(prob1[i]), req.threshold, req.only_positive)) is not None
-    ]
+    if req.only_positive:
+        mask = prob1 >= req.threshold
+        work_df = batch_df[mask].reset_index(drop=True)
+        work_probs = prob1[mask]
+    else:
+        work_df, work_probs = batch_df, prob1
+    results = _build_results(work_df, work_probs, req.threshold, "From_Bank", "Account")
     return BatchRandomInferenceResult(results=results, num_flagged=sum(1 for r in results if r.prediction))
 
 
-def run_targeted_inference(conn: sqlite3.Connection ,sess: ort.InferenceSession ,req: TargetedAccountRequest, from_account: bool,) -> TargetedAccountResult:
+def run_targeted_inference(conn: sqlite3.Connection, sess: ort.InferenceSession, req: TargetedAccountRequest, from_account: bool) -> TargetedAccountResult:
     if from_account:
         targeted_df = _find_target_account_from_db(conn, req.bank_name, req.account_name)
         bank_col, account_col = "From_Bank", "Account"
@@ -294,13 +297,13 @@ def run_targeted_inference(conn: sqlite3.Connection ,sess: ort.InferenceSession 
         bank_col, account_col = "To_Bank", "To_Account"
     _, probs = _run_onnx(sess, targeted_df)
     prob1 = np.asarray(probs).reshape(-1, 2)[:, 1].astype(np.float32)
-    results = [
-        r for i in range(len(targeted_df))
-        if (r := _row_to_result(
-            targeted_df.iloc[i], float(prob1[i]), req.threshold, req.only_positive,
-            bank_col=bank_col, account_col=account_col,
-        )) is not None
-    ]
+    if req.only_positive:
+        mask = prob1 >= req.threshold
+        work_df = targeted_df[mask].reset_index(drop=True)
+        work_probs = prob1[mask]
+    else:
+        work_df, work_probs = targeted_df, prob1
+    results = _build_results(work_df, work_probs, req.threshold, bank_col, account_col)
     return TargetedAccountResult(results=results, num_flagged=sum(1 for r in results if r.prediction))
 
 
