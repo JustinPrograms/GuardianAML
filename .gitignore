@@ -3,4 +3,5 @@
 AIModel/IBM_Synthetic_AML-Data.pdf
 AIModel/training-pmml.ipynb
 __pycache__
-Guardian/data/Transaction.db-*
+Guardian/data/Transaction*
+Guardian/exports/

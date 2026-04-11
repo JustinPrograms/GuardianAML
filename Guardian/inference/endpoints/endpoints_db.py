@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,8 @@ GUARDIAN_ROOT = Path(__file__).resolve().parents[2]
 MODEL_PATH = GUARDIAN_ROOT / "models" / "full-scale-model.onnx" # FIXME: reference the directory not a specific model
 DB_PATH = GUARDIAN_ROOT / "data" / "Transaction.db"
 FRONTEND_PATH = GUARDIAN_ROOT / "frontend" / "index.html"
+EXPORTS_CSV_PATH  = GUARDIAN_ROOT / "exports" / "csv"
+EXPORTS_JSON_PATH = GUARDIAN_ROOT / "exports" / "json"
 
 #---------------------------#
 #--------- HELPERS ---------#
@@ -98,20 +102,25 @@ def _sample_random_accounts_db(conn: sqlite3.Connection, n: int) -> pd.DataFrame
         "SELECT from_bank, account FROM accounts ORDER BY RANDOM() LIMIT ?",
         conn, params=(n,),
     )
-    sampled.to_sql("_batch_sample", conn, if_exists="replace", index=False)
 
-    df = pd.read_sql_query("""
+    # Build a set of (bank, account) keys from the in-memory sample and use
+    # them to fetch one representative row per account directly from FullData,
+    # avoiding any write back to the database.
+    placeholders = ",".join("(?,?)" for _ in range(len(sampled)))
+    params = [val for row in sampled.itertuples(index=False) for val in (row.from_bank, row.account)]
+    df = pd.read_sql_query(
+        f"""
         SELECT t.*
         FROM FullData t
         INNER JOIN (
-            SELECT f.From_Bank, f.Account, MIN(f.id) AS min_id
-            FROM FullData f
-            INNER JOIN _batch_sample s
-                ON f.From_Bank = s.from_bank
-                AND f.Account = s.account
-            GROUP BY f.From_Bank, f.Account
+            SELECT From_Bank, Account, MIN(id) AS min_id
+            FROM FullData
+            WHERE (From_Bank, Account) IN ({placeholders})
+            GROUP BY From_Bank, Account
         ) sel ON t.id = sel.min_id
-    """, conn)
+        """,
+        conn, params=params,
+    )
 
     return df
 
@@ -373,7 +382,7 @@ def run_bank_summary_inference(conn: sqlite3.Connection, sess: ort.InferenceSess
     total_flagged_amount = 0.0
     amount_col = _find_column(bank_df, "Amount_Paid")
     if amount_col:
-        val = pd.to_numeric(bank_df.loc[bank_df["flagged"], amount_col], errors="coerce").sum()
+        val = pd.to_numeric(bank_df.loc[bank_df["flagged"], amount_col], errors="coerce").abs().sum()
         total_flagged_amount = float(val) if not pd.isna(val) else 0.0
     return BankSummaryResult(
         bank_name=req.bank_name,
@@ -483,3 +492,41 @@ def bank_summary(req: BankSummaryRequest) -> BankSummaryResult:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+#------------------------------------------#
+#-------------- Export Endpoints ----------#
+#------------------------------------------#
+
+class ExportRequest(BaseModel):
+    data: Any
+    label: str
+
+
+def _export_filename(label: str, ext: str) -> str:
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe = label.replace("/", "_").replace(" ", "_")
+    return f"{safe}_{ts}.{ext}"
+
+
+@app.post("/export/csv")
+def export_csv(req: ExportRequest) -> dict[str, str]:
+    EXPORTS_CSV_PATH.mkdir(parents=True, exist_ok=True)
+    filename = _export_filename(req.label, "csv")
+    path = EXPORTS_CSV_PATH / filename
+    data = req.data
+    # Normalise: results list or bare dict
+    rows = data.get("results") if isinstance(data, dict) and "results" in data else (
+        [data] if isinstance(data, dict) else data
+    )
+    pd.DataFrame(rows).to_csv(path, index=False)
+    return {"filename": filename}
+
+
+@app.post("/export/json")
+def export_json(req: ExportRequest) -> dict[str, str]:
+    EXPORTS_JSON_PATH.mkdir(parents=True, exist_ok=True)
+    filename = _export_filename(req.label, "json")
+    path = EXPORTS_JSON_PATH / filename
+    path.write_text(json.dumps(req.data, indent=2))
+    return {"filename": filename}

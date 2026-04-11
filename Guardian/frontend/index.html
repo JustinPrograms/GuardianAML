@@ -139,7 +139,6 @@
       gap: 14px;
     }
     .form-group { display: flex; flex-direction: column; gap: 5px; }
-    .form-group.full { grid-column: 1 / -1; }
 
     label { font-size: 12px; color: var(--muted); font-weight: 500; }
 
@@ -159,7 +158,6 @@
 
     .range-row { display: flex; align-items: center; gap: 12px; }
     input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
-    .range-val { min-width: 36px; font-size: 13px; font-weight: 600; color: var(--accent-3); text-align: right; }
 
     .checkbox-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
     .checkbox-row input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
@@ -176,26 +174,6 @@
     .btn-secondary { background: var(--card-2); color: var(--text); border: 1px solid var(--border); }
 
     .form-actions { margin-top: 18px; display: flex; gap: 10px; align-items: center; }
-
-    /* ── RESULTS ── */
-    #results-panel {
-      border-top: 1px solid var(--border);
-      margin-top: 4px;
-    }
-
-    .results-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 0 12px;
-    }
-    .results-header h3 { font-size: 14px; font-weight: 600; }
-
-    .badge {
-      font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
-      display: inline-flex; align-items: center; gap: 5px;
-    }
-    .badge-flagged { background: rgba(239,68,68,0.18); color: var(--danger); border: 1px solid rgba(239,68,68,0.35); }
-    .badge-clean   { background: rgba(34,197,94,0.14); color: var(--success); border: 1px solid rgba(34,197,94,0.3); }
-    .badge-neutral { background: rgba(124,58,237,0.2); color: var(--accent-3); border: 1px solid rgba(124,58,237,0.4); }
 
     /* Stat cards row */
     .stat-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -273,6 +251,21 @@
       padding: 2px 7px; border-radius: 4px;
       background: rgba(124,58,237,0.2); color: var(--accent-3);
     }
+
+    /* ── EXPORT ── */
+    .export-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 0 2px;
+    }
+    .export-bar span { font-size: 11.5px; color: var(--muted); margin-right: 4px; }
+    .btn-export {
+      padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--card-2); color: var(--accent-3); font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s, border-color 0.15s;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .btn-export:hover { background: var(--card); border-color: var(--accent); color: #fff; }
+    .export-status { font-size: 11.5px; color: var(--muted); margin-left: 6px; }
 
     /* scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -449,6 +442,7 @@
           <button class="btn btn-primary" onclick="runBatchRandom()">
             <span>▶</span> Run Inference
           </button>
+          <div id="br-export"></div>
         </div>
       </div>
       <div id="br-results"></div>
@@ -486,6 +480,7 @@
           <button class="btn btn-primary" onclick="runTargetFrom()">
             <span>▶</span> Run Inference
           </button>
+          <div id="tf-export"></div>
         </div>
       </div>
       <div id="tf-results"></div>
@@ -523,6 +518,7 @@
           <button class="btn btn-primary" onclick="runTargetTo()">
             <span>▶</span> Run Inference
           </button>
+          <div id="tt-export"></div>
         </div>
       </div>
       <div id="tt-results"></div>
@@ -560,6 +556,7 @@
           <button class="btn btn-primary" onclick="runTargetCombined()">
             <span>▶</span> Run Inference
           </button>
+          <div id="tc-export"></div>
         </div>
       </div>
       <div id="tc-results"></div>
@@ -597,6 +594,7 @@
           <button class="btn btn-primary" onclick="runTopRisky()">
             <span>▶</span> Run Analysis
           </button>
+          <div id="tr-export"></div>
         </div>
       </div>
       <div id="tr-results"></div>
@@ -630,6 +628,7 @@
           <button class="btn btn-primary" onclick="runBankSummary()">
             <span>▶</span> Run Analysis
           </button>
+          <div id="bs-export"></div>
         </div>
       </div>
       <div id="bs-results"></div>
@@ -637,6 +636,18 @@
 
   </div><!-- /content -->
 </main>
+
+<!-- Bank context menu -->
+<div id="bank-ctx-menu" style="
+  display:none;position:fixed;z-index:9999;
+  background:#13102a;border:1px solid var(--border);border-radius:8px;
+  box-shadow:0 4px 18px rgba(0,0,0,.45);padding:4px 0;min-width:180px;font-size:13px;">
+  <div id="bank-ctx-label" style="padding:6px 14px 4px;color:var(--muted);font-size:11.5px;border-bottom:1px solid var(--border);margin-bottom:2px;"></div>
+  <div id="bank-ctx-summary" style="padding:7px 14px;cursor:pointer;color:var(--fg);"
+    onmouseenter="this.style.background='rgba(255,255,255,.07)'"
+    onmouseleave="this.style.background=''"
+  >≡ Run Bank Summary</div>
+</div>
 
 <script>
   // ── UTILS ──
@@ -738,7 +749,7 @@
 
   // ── INFERENCE RESULTS TABLE ──
 
-  function renderInferenceResults(el, data, elapsed) {
+  function renderInferenceResults(el, data, elapsed, enableBankMenu = false, exportLabel = 'inference') {
     const { results, num_flagged } = data;
     const total = results.length;
     const pct = total > 0 ? ((num_flagged / total) * 100).toFixed(1) : '0.0';
@@ -770,7 +781,7 @@
 
     const rows = results.map(r => `
       <tr>
-        <td style="font-family:monospace;font-size:12.5px;">${escHtml(r.bank_name)}</td>
+        <td${enableBankMenu ? ` class="bank-ctx-cell" data-bank="${escHtml(r.bank_name)}" title="Right-click for options" style="cursor:context-menu;"` : ''} style="font-family:monospace;font-size:12.5px;">${escHtml(r.bank_name)}</td>
         <td style="font-family:monospace;font-size:12.5px;">${escHtml(r.account_name)}</td>
         <td>${fmtTimestamp(r.timestamp)}</td>
         <td>${riskBar(r.prob)}</td>
@@ -782,9 +793,7 @@
         <table>
           <thead>
             <tr>
-              <th>Bank</th>
-              <th>Account</th>
-              <th>Timestamp</th>
+              <th>Bank</th><th>Account</th><th>Timestamp</th>
               <th>Risk Probability</th>
               <th>Status</th>
             </tr>
@@ -792,7 +801,44 @@
           <tbody>${rows}</tbody>
         </table>
       </div>`;
+    addExportBar(el, data, exportLabel);
   }
+
+  // ── BANK CONTEXT MENU ──
+
+  (function() {
+    const menu = document.getElementById('bank-ctx-menu');
+    const label = document.getElementById('bank-ctx-label');
+    const summaryBtn = document.getElementById('bank-ctx-summary');
+    let activeBank = null;
+
+    function hideMenu() { menu.style.display = 'none'; activeBank = null; }
+
+    document.addEventListener('contextmenu', e => {
+      const cell = e.target.closest('.bank-ctx-cell');
+      if (!cell) { hideMenu(); return; }
+      e.preventDefault();
+      activeBank = cell.dataset.bank;
+      label.textContent = activeBank;
+      menu.style.display = 'block';
+      const x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 8);
+      const y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 8);
+      menu.style.left = x + 'px';
+      menu.style.top  = y + 'px';
+    });
+
+    document.addEventListener('click', hideMenu);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideMenu(); });
+
+    summaryBtn.addEventListener('click', () => {
+      if (!activeBank) return;
+      const bank = activeBank;
+      hideMenu();
+      navigate(document.querySelector('[data-page=bank-summary]'));
+      document.getElementById('bs-bank').value = bank;
+      runBankSummary();
+    });
+  })();
 
   // ── BATCH RANDOM ──
 
@@ -806,7 +852,7 @@
         only_positive:  document.getElementById('br-only-pos').checked,
         model:          selectedModel(),
       });
-      renderInferenceResults(el, data, elapsed);
+      renderInferenceResults(el, data, elapsed, true, 'batch-random');
     } catch(e) { showError(el, e.message); }
   }
 
@@ -823,7 +869,7 @@
         only_positive: document.getElementById('tf-only-pos').checked,
         model:         selectedModel(),
       });
-      renderInferenceResults(el, data, elapsed);
+      renderInferenceResults(el, data, elapsed, false, 'target-from');
     } catch(e) { showError(el, e.message); }
   }
 
@@ -840,7 +886,7 @@
         only_positive: document.getElementById('tt-only-pos').checked,
         model:         selectedModel(),
       });
-      renderInferenceResults(el, data, elapsed);
+      renderInferenceResults(el, data, elapsed, false, 'target-to');
     } catch(e) { showError(el, e.message); }
   }
 
@@ -857,7 +903,7 @@
         only_positive: document.getElementById('tc-only-pos').checked,
         model:         selectedModel(),
       });
-      renderInferenceResults(el, data, elapsed);
+      renderInferenceResults(el, data, elapsed, false, 'target-combined');
     } catch(e) { showError(el, e.message); }
   }
 
@@ -921,6 +967,7 @@
             <tbody>${rows}</tbody>
           </table>
         </div>`;
+      addExportBar(el, data, 'top-risky');
     } catch(e) { showError(el, e.message); }
   }
 
@@ -973,7 +1020,63 @@
             </div>
           </div>
         </div>`;
+      addExportBar(el, r, 'bank-summary');
     } catch(e) { showError(el, e.message); }
+  }
+
+  // ── EXPORT ──
+
+  async function exportResults(data, label, format) {
+    const statusId = `export-status-${label.replace(/[^a-z0-9]/gi,'_')}`;
+    const statusEl = document.getElementById(statusId);
+    if (statusEl) statusEl.textContent = 'Saving…';
+    try {
+      const res = await fetch(apiBase() + `/export/${format}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, label }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.detail || `HTTP ${res.status}`);
+      if (statusEl) {
+        statusEl.textContent = `Saved: ${result.filename}`;
+        setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 4000);
+      }
+    } catch(e) {
+      if (statusEl) { statusEl.textContent = `Error: ${e.message}`; }
+    }
+  }
+
+  // label-to-slot map — keeps addExportBar callers unchanged
+  const _exportSlot = {
+    'batch-random':    'br-export',
+    'target-from':     'tf-export',
+    'target-to':       'tt-export',
+    'target-combined': 'tc-export',
+    'top-risky':       'tr-export',
+    'bank-summary':    'bs-export',
+  };
+
+  function addExportBar(el, data, label) {
+    const safeId = label.replace(/[^a-z0-9]/gi, '_');
+    const slot = document.getElementById(_exportSlot[label]);
+
+    const bar = document.createElement('div');
+    bar.className = 'export-bar';
+    bar.innerHTML = `
+      <span>Export:</span>
+      <button class="btn-export" data-fmt="csv">⬇ CSV</button>
+      <button class="btn-export" data-fmt="json">⬇ JSON</button>
+      <span class="export-status" id="export-status-${safeId}"></span>`;
+    bar.querySelectorAll('.btn-export').forEach(btn => {
+      btn.onclick = () => exportResults(data, label, btn.dataset.fmt);
+    });
+
+    if (slot) {
+      slot.replaceChildren(bar);          // replace on re-run, no duplicates
+    } else {
+      el.appendChild(bar);
+    }
   }
 
   // ── HEALTH CHECK ──
